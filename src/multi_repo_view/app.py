@@ -6,7 +6,7 @@ from textwrap import dedent
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, Static
+from textual.widgets import Footer, Header, Input, Static
 
 from multi_repo_view.config import Config, _get_config_path, get_repo_paths, load_config
 from multi_repo_view.git_ops import (
@@ -49,6 +49,10 @@ class MultiRepoViewApp(App):
         color: $text-muted;
     }
 
+    #filter-input {
+        margin: 0 1;
+    }
+
     RepoList {
         height: 1fr;
     }
@@ -64,15 +68,20 @@ class MultiRepoViewApp(App):
         Binding("o", "open_pr", "Open PR"),
         Binding("j", "cursor_down", "Down", show=False),
         Binding("k", "cursor_up", "Up", show=False),
+        Binding("/", "start_filter", "Filter", show=False),
+        Binding("escape", "clear_filter", "Clear Filter", show=False),
         Binding("?", "help", "Help"),
     ]
 
-    def __init__(self, config_path: Path | None = None) -> None:
+    def __init__(self, config_path: Path | None = None, scan_path: Path | None = None) -> None:
         super().__init__()
         self._config_path = config_path
+        self._scan_path = scan_path
         self._config: Config | None = None
         self._repo_paths: list[Path] = []
         self._summaries: list[RepoSummary] = []
+        self._filter_active = False
+        self._filter_text = ""
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -85,7 +94,7 @@ class MultiRepoViewApp(App):
 
     def on_mount(self) -> None:
         self._config = load_config(self._config_path)
-        self._repo_paths = get_repo_paths(self._config)
+        self._repo_paths = get_repo_paths(self._config, self._scan_path)
         self._load_summaries()
         if self._config:
             self.set_interval(
@@ -209,4 +218,63 @@ class MultiRepoViewApp(App):
             pass
 
     def action_help(self) -> None:
-        self.notify("j/k: Navigate | o: Open PR | r: Refresh | q: Quit")
+        self.notify("j/k: Navigate | /: Filter | o: Open PR | r: Refresh | q: Quit")
+
+    def action_start_filter(self) -> None:
+        if not self._filter_active:
+            self._filter_active = True
+            panel = self.query_one("#repo-list-panel")
+            header = self.query_one("#repo-list-header")
+            filter_input = Input(placeholder="Filter repos...", id="filter-input")
+            panel.mount(filter_input, after=header)
+            filter_input.focus()
+
+    def action_clear_filter(self) -> None:
+        if self._filter_active:
+            self._filter_active = False
+            self._filter_text = ""
+            try:
+                filter_input = self.query_one("#filter-input", Input)
+                filter_input.remove()
+            except Exception:
+                pass
+            self._apply_filter()
+            try:
+                repo_list = self.query_one(RepoList)
+                repo_list.focus()
+            except Exception:
+                pass
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "filter-input":
+            self._filter_text = event.value
+            self._apply_filter()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "filter-input":
+            if event.value == "":
+                self.action_clear_filter()
+            else:
+                try:
+                    repo_list = self.query_one(RepoList)
+                    repo_list.focus()
+                    if len(repo_list) > 0:
+                        repo_list.index = 0
+                except Exception:
+                    pass
+
+    def _apply_filter(self) -> None:
+        if not self._filter_text:
+            filtered_summaries = self._summaries
+        else:
+            filter_lower = self._filter_text.lower()
+            filtered_summaries = [
+                s for s in self._summaries
+                if filter_lower in s.name.lower() or filter_lower in s.current_branch.lower()
+            ]
+
+        try:
+            repo_list = self.query_one(RepoList)
+            repo_list.update_summaries(filtered_summaries)
+        except Exception:
+            pass

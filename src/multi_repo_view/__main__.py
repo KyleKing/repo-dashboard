@@ -23,10 +23,17 @@ def main() -> None:
         type=Path,
         help=f"Path to config file (env: {CONFIG_ENV_VAR}, default: ~/.config/multi-repo-view/config.toml)",
     )
+    parser.add_argument(
+        "--path",
+        "-p",
+        type=Path,
+        help="Path to scan for git repositories (looks for all */.git/ directories)",
+    )
     args = parser.parse_args()
 
     config_path = _resolve_config_path(args.config)
-    app = MultiRepoViewApp(config_path=config_path)
+    scan_path = args.path.expanduser().resolve() if args.path else None
+    app = MultiRepoViewApp(config_path=config_path, scan_path=scan_path)
     app.run()
 
 

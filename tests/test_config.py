@@ -7,6 +7,7 @@ from multi_repo_view.config import (
     Config,
     _get_config_path,
     _get_xdg_config_home,
+    discover_git_repos,
     get_repo_paths,
     load_config,
 )
@@ -82,3 +83,82 @@ def test_get_repo_paths_filters_nonexistent(tmp_path: Path) -> None:
     )
     paths = get_repo_paths(config)
     assert paths == [existing_dir]
+
+
+def test_discover_git_repos_empty_dir(tmp_path: Path) -> None:
+    result = discover_git_repos(tmp_path)
+    assert result == []
+
+
+def test_discover_git_repos_nonexistent_path(tmp_path: Path) -> None:
+    result = discover_git_repos(tmp_path / "nonexistent")
+    assert result == []
+
+
+def test_discover_git_repos_finds_repos(tmp_path: Path) -> None:
+    repo1 = tmp_path / "repo1"
+    repo2 = tmp_path / "repo2"
+    not_a_repo = tmp_path / "not-a-repo"
+
+    repo1.mkdir()
+    (repo1 / ".git").mkdir()
+
+    repo2.mkdir()
+    (repo2 / ".git").mkdir()
+
+    not_a_repo.mkdir()
+
+    result = discover_git_repos(tmp_path)
+    assert len(result) == 2
+    assert repo1 in result
+    assert repo2 in result
+    assert not_a_repo not in result
+
+
+def test_discover_git_repos_sorted(tmp_path: Path) -> None:
+    for name in ["zebra", "apple", "middle"]:
+        repo_dir = tmp_path / name
+        repo_dir.mkdir()
+        (repo_dir / ".git").mkdir()
+
+    result = discover_git_repos(tmp_path)
+    assert [r.name for r in result] == ["apple", "middle", "zebra"]
+
+
+def test_get_repo_paths_with_scan_path(tmp_path: Path) -> None:
+    config_repo = tmp_path / "config-repo"
+    config_repo.mkdir()
+
+    scan_base = tmp_path / "scan"
+    scan_base.mkdir()
+
+    scanned_repo1 = scan_base / "repo1"
+    scanned_repo1.mkdir()
+    (scanned_repo1 / ".git").mkdir()
+
+    scanned_repo2 = scan_base / "repo2"
+    scanned_repo2.mkdir()
+    (scanned_repo2 / ".git").mkdir()
+
+    config = Config(repos=[{"path": str(config_repo)}])
+
+    paths = get_repo_paths(config, scan_base)
+    assert len(paths) == 3
+    assert config_repo in paths
+    assert scanned_repo1 in paths
+    assert scanned_repo2 in paths
+
+
+def test_get_repo_paths_with_scan_path_no_duplicates(tmp_path: Path) -> None:
+    scan_base = tmp_path / "scan"
+    scan_base.mkdir()
+
+    repo = scan_base / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+
+    config = Config(repos=[{"path": str(repo)}])
+
+    paths = get_repo_paths(config, scan_base)
+    assert len(paths) == 1
+    assert paths[0] == repo
