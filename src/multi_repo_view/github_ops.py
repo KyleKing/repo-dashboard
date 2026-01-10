@@ -1,8 +1,43 @@
+import asyncio
 import json
 import subprocess
 from pathlib import Path
 
 from multi_repo_view.models import PRInfo
+
+
+def _get_checks_status(rollup: list | None) -> str | None:
+    if not rollup:
+        return None
+
+    states = [check.get("conclusion") or check.get("state", "") for check in rollup]
+    if not states:
+        return None
+
+    if all(s in ("SUCCESS", "COMPLETED") for s in states):
+        return "passing"
+    if any(s in ("FAILURE", "ERROR") for s in states):
+        return "failing"
+    if any(s in ("PENDING", "IN_PROGRESS", "QUEUED") for s in states):
+        return "pending"
+    return "unknown"
+
+
+def _parse_pr_response(stdout: str) -> PRInfo | None:
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None
+
+    checks_status = _get_checks_status(data.get("statusCheckRollup"))
+
+    return PRInfo(
+        number=data["number"],
+        title=data["title"],
+        url=data["url"],
+        state=data["state"],
+        checks_status=checks_status,
+    )
 
 
 def get_pr_for_branch(path: Path, branch: str) -> PRInfo | None:
@@ -22,34 +57,24 @@ def get_pr_for_branch(path: Path, branch: str) -> PRInfo | None:
     if result.returncode != 0:
         return None
 
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return None
+    return _parse_pr_response(result.stdout)
 
-    checks_status = _get_checks_status(data.get("statusCheckRollup"))
 
-    return PRInfo(
-        number=data["number"],
-        title=data["title"],
-        url=data["url"],
-        state=data["state"],
-        checks_status=checks_status,
+async def get_pr_for_branch_async(path: Path, branch: str) -> PRInfo | None:
+    proc = await asyncio.create_subprocess_exec(
+        "gh",
+        "pr",
+        "view",
+        branch,
+        "--json",
+        "number,title,url,state,statusCheckRollup",
+        cwd=path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
+    stdout, _ = await proc.communicate()
 
-
-def _get_checks_status(rollup: list | None) -> str | None:
-    if not rollup:
+    if proc.returncode != 0:
         return None
 
-    states = [check.get("conclusion") or check.get("state", "") for check in rollup]
-    if not states:
-        return None
-
-    if all(s in ("SUCCESS", "COMPLETED") for s in states):
-        return "passing"
-    if any(s in ("FAILURE", "ERROR") for s in states):
-        return "failing"
-    if any(s in ("PENDING", "IN_PROGRESS", "QUEUED") for s in states):
-        return "pending"
-    return "unknown"
+    return _parse_pr_response(stdout.decode())

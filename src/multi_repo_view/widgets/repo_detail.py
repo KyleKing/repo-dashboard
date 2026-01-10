@@ -1,6 +1,6 @@
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
-from textual.widgets import Rule, Static
+from textual.widgets import Static
 
 from multi_repo_view.models import RepoDetail
 
@@ -11,17 +11,29 @@ class RepoDetailView(VerticalScroll):
         padding: 1 2;
     }
 
-    RepoDetailView .section-title {
+    RepoDetailView .repo-name {
         text-style: bold;
+        color: $accent;
+        padding-bottom: 1;
+    }
+
+    RepoDetailView .section-header {
+        text-style: bold;
+        color: $text;
         margin-top: 1;
+        border-bottom: solid $surface;
     }
 
     RepoDetailView .pr-title {
-        color: $accent;
+        color: $success;
     }
 
     RepoDetailView .pr-url {
         color: $text-muted;
+    }
+
+    RepoDetailView .pr-status {
+        padding-left: 2;
     }
 
     RepoDetailView .checks-passing {
@@ -36,12 +48,35 @@ class RepoDetailView(VerticalScroll):
         color: $warning;
     }
 
-    RepoDetailView .branch-current {
-        text-style: bold;
+    RepoDetailView .branch-row {
+        padding-left: 2;
     }
 
-    RepoDetailView .file-list {
+    RepoDetailView .branch-current {
+        color: $success;
+    }
+
+    RepoDetailView .file-staged {
+        color: $success;
         padding-left: 2;
+    }
+
+    RepoDetailView .file-modified {
+        color: $warning;
+        padding-left: 2;
+    }
+
+    RepoDetailView .file-untracked {
+        color: $text-muted;
+        padding-left: 2;
+    }
+
+    RepoDetailView .clean-state {
+        color: $text-muted;
+        padding-left: 2;
+    }
+
+    RepoDetailView .placeholder {
         color: $text-muted;
     }
     """
@@ -51,62 +86,90 @@ class RepoDetailView(VerticalScroll):
         self._detail: RepoDetail | None = None
 
     def compose(self) -> ComposeResult:
-        yield Static("Select a repository", id="placeholder")
+        yield Static("Select a repository", classes="placeholder")
 
     def update_detail(self, detail: RepoDetail) -> None:
         self._detail = detail
         self._refresh_content()
 
+    def _format_ahead_behind(self, ahead: int, behind: int) -> str:
+        parts = []
+        if ahead > 0:
+            parts.append(f"↑{ahead}")
+        if behind > 0:
+            parts.append(f"↓{behind}")
+        return " ".join(parts) if parts else ""
+
+    def _format_checks_icon(self, status: str | None) -> str:
+        match status:
+            case "passing":
+                return "✓"
+            case "failing":
+                return "✗"
+            case "pending":
+                return "○"
+            case _:
+                return ""
+
     def _refresh_content(self) -> None:
         self.remove_children()
         if not self._detail:
-            self.mount(Static("Select a repository", id="placeholder"))
+            self.mount(Static("Select a repository", classes="placeholder"))
             return
 
         detail = self._detail
-        self.mount(Static(detail.summary.name, classes="section-title"))
-        self.mount(Rule())
+
+        self.mount(Static(f"{detail.summary.name}", classes="repo-name"))
 
         if pr := detail.pr_info:
-            self.mount(Static(f"PR #{pr.number}: {pr.title}", classes="pr-title"))
-            self.mount(Static(pr.url, classes="pr-url"))
+            self.mount(Static("Pull Request", classes="section-header"))
+            checks_icon = self._format_checks_icon(pr.checks_status)
             checks_class = f"checks-{pr.checks_status}" if pr.checks_status else ""
-            status_text = f"Status: {pr.state}"
-            if pr.checks_status:
-                status_text += f"  Checks: {pr.checks_status}"
-            self.mount(Static(status_text, classes=checks_class))
-            self.mount(Rule())
+            self.mount(Static(f"  #{pr.number} {pr.title}", classes="pr-title"))
+            self.mount(Static(f"  {pr.url}", classes="pr-url"))
+            status_parts = [pr.state]
+            if checks_icon:
+                status_parts.append(f"{checks_icon} {pr.checks_status}")
+            self.mount(
+                Static(
+                    f"  {' | '.join(status_parts)}", classes=f"pr-status {checks_class}"
+                )
+            )
 
-        self.mount(Static("Branches", classes="section-title"))
+        self.mount(Static("Branches", classes="section-header"))
         for branch in detail.branches:
-            marker = "*" if branch.is_current else " "
-            tracking = branch.tracking or "(local only)"
-            ahead_behind = ""
-            if branch.tracking:
-                ahead_behind = f" [{branch.ahead}/{branch.behind}]"
+            marker = "* " if branch.is_current else "  "
             branch_class = "branch-current" if branch.is_current else ""
-            self.mount(Static(f"  {marker} {branch.name:<25}{ahead_behind:<10} {tracking}", classes=branch_class))
+            ahead_behind = self._format_ahead_behind(branch.ahead, branch.behind)
+            tracking_info = branch.tracking or "(local)"
 
-        self.mount(Rule())
-        self.mount(Static("Working Tree", classes="section-title"))
+            if ahead_behind:
+                line = f"{marker}{branch.name:<24} {ahead_behind:<8} {tracking_info}"
+            else:
+                line = f"{marker}{branch.name:<24} {'—':<8} {tracking_info}"
 
-        if detail.staged_files:
-            self.mount(Static("Staged:"))
-            for f in detail.staged_files:
-                self.mount(Static(f"  {f}", classes="file-list"))
+            self.mount(Static(line, classes=f"branch-row {branch_class}"))
 
-        if detail.modified_files:
-            self.mount(Static("Modified:"))
-            for f in detail.modified_files:
-                self.mount(Static(f"  {f}", classes="file-list"))
+        self.mount(Static("Working Tree", classes="section-header"))
 
-        if detail.untracked_files:
-            self.mount(Static("Untracked:"))
-            for f in detail.untracked_files:
-                self.mount(Static(f"  {f}", classes="file-list"))
+        has_changes = False
 
-        if not any([detail.staged_files, detail.modified_files, detail.untracked_files]):
-            self.mount(Static("  (clean)", classes="file-list"))
+        for f in detail.staged_files:
+            self.mount(Static(f"A  {f}", classes="file-staged"))
+            has_changes = True
+
+        for f in detail.modified_files:
+            self.mount(Static(f"M  {f}", classes="file-modified"))
+            has_changes = True
+
+        for f in detail.untracked_files:
+            self.mount(Static(f"?  {f}", classes="file-untracked"))
+            has_changes = True
+
+        if not has_changes:
+            self.mount(
+                Static("Nothing to commit, working tree clean", classes="clean-state")
+            )
 
     @property
     def pr_url(self) -> str | None:

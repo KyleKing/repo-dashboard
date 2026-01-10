@@ -7,13 +7,29 @@ from multi_repo_view.models import RepoSummary
 
 
 class RepoListItem(ListItem):
+    DEFAULT_CSS = """
+    RepoListItem {
+        padding: 0 1;
+    }
+    """
+
     def __init__(self, summary: RepoSummary) -> None:
         super().__init__()
         self.summary = summary
 
+    def _format_status_indicators(self) -> str:
+        parts = []
+        if self.summary.ahead_count > 0:
+            parts.append(f"↑{self.summary.ahead_count}")
+        if self.summary.behind_count > 0:
+            parts.append(f"↓{self.summary.behind_count}")
+        if self.summary.uncommitted_count > 0:
+            parts.append(f"*{self.summary.uncommitted_count}")
+        return " ".join(parts)
+
     def compose(self) -> ComposeResult:
-        indicator = "[*]" if self.summary.has_unpushed or self.summary.has_uncommitted else "[ ]"
-        yield Static(f"{indicator} {self.summary.name:<20} {self.summary.current_branch}")
+        status = self._format_status_indicators()
+        yield Static(f"{status:<8} {self.summary.name:<16} {self.summary.current_branch}")
 
 
 class RepoList(ListView):

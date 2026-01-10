@@ -1,14 +1,20 @@
+import asyncio
 import webbrowser
 from pathlib import Path
+from textwrap import dedent
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Static
 
-from multi_repo_view.config import Config, get_repo_paths, load_config
-from multi_repo_view.git_ops import get_branch_list, get_repo_summary, get_status_files
-from multi_repo_view.github_ops import get_pr_for_branch
+from multi_repo_view.config import Config, _get_config_path, get_repo_paths, load_config
+from multi_repo_view.git_ops import (
+    get_branch_list_async,
+    get_repo_summary_async,
+    get_status_files_async,
+)
+from multi_repo_view.github_ops import get_pr_for_branch_async
 from multi_repo_view.models import RepoDetail, RepoSummary
 from multi_repo_view.widgets.repo_detail import RepoDetailView
 from multi_repo_view.widgets.repo_list import RepoList
@@ -22,7 +28,7 @@ class MultiRepoViewApp(App):
         height: 1fr;
     }
 
-    #repo-list-container {
+    #repo-list-panel {
         width: 1fr;
         border-right: solid $primary;
     }
@@ -31,6 +37,16 @@ class MultiRepoViewApp(App):
         text-style: bold;
         padding: 1 2;
         background: $surface;
+    }
+
+    #empty-state {
+        padding: 1 2;
+        color: $text-muted;
+    }
+
+    #loading-state {
+        padding: 1 2;
+        color: $text-muted;
     }
 
     RepoList {
@@ -46,6 +62,8 @@ class MultiRepoViewApp(App):
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh"),
         Binding("o", "open_pr", "Open PR"),
+        Binding("j", "cursor_down", "Down", show=False),
+        Binding("k", "cursor_up", "Up", show=False),
         Binding("?", "help", "Help"),
     ]
 
@@ -59,41 +77,94 @@ class MultiRepoViewApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="main-container"):
-            with Horizontal(id="repo-list-container"):
+            with Vertical(id="repo-list-panel"):
                 yield Static("Repositories", id="repo-list-header")
+                yield Static("Loading...", id="loading-state")
             yield RepoDetailView()
         yield Footer()
 
     def on_mount(self) -> None:
-        self._load_data()
-        self._mount_repo_list()
-        if self._config:
-            self.set_interval(self._config.settings.refresh_interval, self._refresh_data)
-
-    def _load_data(self) -> None:
         self._config = load_config(self._config_path)
         self._repo_paths = get_repo_paths(self._config)
-        self._summaries = [get_repo_summary(p) for p in self._repo_paths]
+        self._load_summaries()
+        if self._config:
+            self.set_interval(
+                self._config.settings.refresh_interval, self._refresh_data
+            )
 
-    def _mount_repo_list(self) -> None:
-        container = self.query_one("#repo-list-container")
+    def _load_summaries(self) -> None:
+        self.run_worker(self._fetch_summaries(), exclusive=True, group="summaries")
+
+    async def _fetch_summaries(self) -> list[RepoSummary]:
+        summaries = await asyncio.gather(
+            *[get_repo_summary_async(p) for p in self._repo_paths]
+        )
+        self._summaries = list(summaries)
+        self._update_repo_list()
+        return list(summaries)
+
+    def _update_repo_list(self) -> None:
+        panel = self.query_one("#repo-list-panel")
+
+        loading = panel.query("#loading-state")
+        for widget in loading:
+            widget.remove()
+
+        empty = panel.query("#empty-state")
+        for widget in empty:
+            widget.remove()
+
+        repo_lists = panel.query(RepoList)
+        for widget in repo_lists:
+            widget.remove()
+
         if self._summaries:
             repo_list = RepoList(self._summaries)
-            container.mount(repo_list)
+            panel.mount(repo_list)
+            repo_list.focus()
+            self.call_after_refresh(self._select_first_repo)
+        else:
+            panel.mount(Static(self._get_empty_state_message(), id="empty-state"))
 
-    def _refresh_data(self) -> None:
-        self._summaries = [get_repo_summary(p) for p in self._repo_paths]
+    def _get_empty_state_message(self) -> str:
+        config_path = self._config_path or _get_config_path()
+        return dedent(f"""\
+            No repositories configured.
+
+            Create a config file at:
+            {config_path}
+
+            Example config:
+            [[repos]]
+            path = "~/Developer/my-repo"
+
+            [[repos]]
+            path = "~/Projects/other-repo\"""")
+
+    def _select_first_repo(self) -> None:
         try:
             repo_list = self.query_one(RepoList)
-            repo_list.update_summaries(self._summaries)
+            if repo_list.index is None and len(repo_list) > 0:
+                repo_list.index = 0
         except Exception:
             pass
 
+    def _refresh_data(self) -> None:
+        self._load_summaries()
+
     def on_repo_list_repo_selected(self, event: RepoList.RepoSelected) -> None:
-        summary = event.summary
-        branches = get_branch_list(summary.path)
-        untracked, modified, staged = get_status_files(summary.path)
-        pr_info = get_pr_for_branch(summary.path, summary.current_branch)
+        self.run_worker(
+            self._fetch_repo_detail(event.summary),
+            exclusive=True,
+            group="detail",
+        )
+
+    async def _fetch_repo_detail(self, summary: RepoSummary) -> RepoDetail:
+        branches, (untracked, modified, staged), pr_info = await asyncio.gather(
+            get_branch_list_async(summary.path),
+            get_status_files_async(summary.path),
+            get_pr_for_branch_async(summary.path, summary.current_branch),
+        )
 
         detail = RepoDetail(
             summary=summary,
@@ -104,6 +175,10 @@ class MultiRepoViewApp(App):
             pr_info=pr_info,
         )
 
+        self._update_detail_view(detail)
+        return detail
+
+    def _update_detail_view(self, detail: RepoDetail) -> None:
         detail_view = self.query_one(RepoDetailView)
         detail_view.update_detail(detail)
 
@@ -118,6 +193,20 @@ class MultiRepoViewApp(App):
             self.notify(f"Opening {url}")
         else:
             self.notify("No PR for current branch", severity="warning")
+
+    def action_cursor_down(self) -> None:
+        try:
+            repo_list = self.query_one(RepoList)
+            repo_list.action_cursor_down()
+        except Exception:
+            pass
+
+    def action_cursor_up(self) -> None:
+        try:
+            repo_list = self.query_one(RepoList)
+            repo_list.action_cursor_up()
+        except Exception:
+            pass
 
     def action_help(self) -> None:
         self.notify("j/k: Navigate | o: Open PR | r: Refresh | q: Quit")

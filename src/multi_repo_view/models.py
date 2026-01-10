@@ -7,8 +7,13 @@ class RepoSummary:
     path: Path
     name: str
     current_branch: str
-    has_unpushed: bool
-    has_uncommitted: bool
+    ahead_count: int
+    behind_count: int
+    uncommitted_count: int
+
+    @property
+    def is_dirty(self) -> bool:
+        return self.ahead_count > 0 or self.uncommitted_count > 0
 
 
 @dataclass(frozen=True)

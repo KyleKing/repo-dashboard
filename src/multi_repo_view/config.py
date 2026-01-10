@@ -1,7 +1,7 @@
+import os
 import sys
 from pathlib import Path
 
-from platformdirs import user_config_dir
 from pydantic import BaseModel, field_validator
 
 if sys.version_info >= (3, 11):
@@ -11,6 +11,12 @@ else:
 
 
 APP_NAME = "multi-repo-view"
+
+
+def _get_xdg_config_home() -> Path:
+    if xdg_config := os.environ.get("XDG_CONFIG_HOME"):
+        return Path(xdg_config)
+    return Path.home() / ".config"
 
 
 class RepoConfig(BaseModel):
@@ -32,7 +38,7 @@ class Config(BaseModel):
 
 
 def _get_config_path() -> Path:
-    return Path(user_config_dir(APP_NAME)) / "config.toml"
+    return _get_xdg_config_home() / APP_NAME / "config.toml"
 
 
 def load_config(config_path: Path | None = None) -> Config:
