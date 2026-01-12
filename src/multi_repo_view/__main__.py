@@ -1,39 +1,44 @@
 import argparse
-import os
 from pathlib import Path
 
 from multi_repo_view.app import MultiRepoViewApp
 
-CONFIG_ENV_VAR = "MULTI_REPO_VIEW_CONFIG"
-
-
-def _resolve_config_path(cli_arg: Path | None) -> Path | None:
-    if cli_arg:
-        return cli_arg.expanduser().resolve()
-    if env_path := os.environ.get(CONFIG_ENV_VAR):
-        return Path(env_path).expanduser().resolve()
-    return None
-
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Multi-repo git status viewer")
-    parser.add_argument(
-        "--config",
-        "-c",
-        type=Path,
-        help=f"Path to config file (env: {CONFIG_ENV_VAR}, default: ~/.config/multi-repo-view/config.toml)",
+    parser = argparse.ArgumentParser(
+        description="Multi-repo git status viewer (K9s-inspired TUI)"
     )
     parser.add_argument(
-        "--path",
-        "-p",
+        "paths",
+        nargs="*",
         type=Path,
-        help="Path to scan for git repositories (looks for all */.git/ directories)",
+        default=[Path.cwd()],
+        help="Paths to scan for git repositories (default: current directory)",
+    )
+    parser.add_argument(
+        "--depth",
+        "-d",
+        type=int,
+        default=1,
+        choices=range(1, 21),
+        metavar="1-20",
+        help="Directory scan depth (default: 1, max: 20)",
+    )
+    parser.add_argument(
+        "--theme",
+        "-t",
+        choices=["dark", "light"],
+        default="dark",
+        help="Color theme (default: dark)",
     )
     args = parser.parse_args()
 
-    config_path = _resolve_config_path(args.config)
-    scan_path = args.path.expanduser().resolve() if args.path else None
-    app = MultiRepoViewApp(config_path=config_path, scan_path=scan_path)
+    paths = [p.expanduser().resolve() for p in args.paths]
+    app = MultiRepoViewApp(
+        scan_paths=paths,
+        scan_depth=args.depth,
+        theme=args.theme,
+    )
     app.run()
 
 

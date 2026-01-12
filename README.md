@@ -1,28 +1,43 @@
-# Repo View
+# Multi-Repo View
 
-To run:
+K9s-inspired TUI for managing multiple git repositories.
+
+## Usage
 
 ```sh
+# Scan current directory
 uv run multi-repo-view
+
+# Scan specific paths
+uv run multi-repo-view ~/Developer ~/Projects
+
+# Scan with custom depth
+uv run multi-repo-view --depth 2 ~/Developer
+
+# Use light theme
+uv run multi-repo-view --theme light
 ```
 
-Config file (`~/.config/multi-repo-view/config.toml`):
+## Keybindings
 
-```tom
-[settings]
-refresh_interval = 30
+### Navigation
+- `j`/`k` or `↓`/`↑` - Navigate up/down
+- `g`/`G` - Jump to top/bottom
+- `Space`/`Enter` - Select item
+- `Esc` - Go back
 
-[[repos]]
-path = "~/Developer/project-a"
+### Actions
+- `o` - Open PR in browser
+- `c` - Copy (branch/PR/path)
+- `r` - Refresh all data
+- `q` - Quit
+- `?` - Show help
 
-[[repos]]
-path = "~/Developer/project-b"
-```
+## Features
 
-Keybindings:
-
-- j/k - Navigate repos
-- o - Open PR in browser
-- r - Manual refresh
-- q - Quit
-- ? - Show help
+- Progressive loading - data loads as it becomes available
+- TTL caching for PR information
+- Git worktree detection
+- Stash tracking
+- Breadcrumb navigation
+- Catppuccin themes (dark/light)

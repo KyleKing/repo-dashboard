@@ -1,0 +1,65 @@
+/* Global styles */
+* {
+    scrollbar-color: $foreground 50%;
+    scrollbar-color-hover: $primary 80%;
+    scrollbar-color-active: $primary;
+    scrollbar-background: $surface-darken-1;
+    scrollbar-background-hover: $surface-darken-1;
+    scrollbar-background-active: $surface-darken-1;
+}
+
+/* Breadcrumb bar */
+Breadcrumbs {
+    height: 1;
+    padding: 0 1;
+    margin: 1 1 0 1;
+}
+
+/* Main container */
+#main-container {
+    height: 1fr;
+    width: 100%;
+    padding: 1;
+}
+
+/* Main data table */
+#main-table {
+    height: 100%;
+    width: 100%;
+    border: none;
+    background: $background;
+}
+
+#main-table:focus-within {
+    border: none;
+}
+
+#main-table > .datatable--header {
+    background: $surface;
+    text-style: bold;
+    color: $text;
+}
+
+#main-table > .datatable--header-hover {
+    background: $primary 30%;
+}
+
+#main-table > .datatable--cursor {
+    background: $primary 40%;
+    color: $text;
+}
+
+#main-table > .datatable--hover {
+    background: $primary 20%;
+}
+
+/* Footer */
+Footer {
+    background: $panel;
+    color: $text-muted;
+}
+
+Footer .footer--key {
+    color: $accent;
+    text-style: bold;
+}

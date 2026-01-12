@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from multi_repo_view.models import PRInfo
+from multi_repo_view.models import PRDetail, PRInfo
 
 
 def _get_checks_status(rollup: list | None) -> str | None:
@@ -78,3 +78,44 @@ async def get_pr_for_branch_async(path: Path, branch: str) -> PRInfo | None:
         return None
 
     return _parse_pr_response(stdout.decode())
+
+
+async def get_pr_detail(path: Path, branch: str) -> PRDetail | None:
+    """Get extended PR details including description and comments"""
+    proc = await asyncio.create_subprocess_exec(
+        "gh",
+        "pr",
+        "view",
+        branch,
+        "--json",
+        "number,title,url,state,statusCheckRollup,body,comments,additions,deletions",
+        cwd=path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await proc.communicate()
+
+    if proc.returncode != 0:
+        return None
+
+    try:
+        data = json.loads(stdout.decode())
+    except json.JSONDecodeError:
+        return None
+
+    unresolved = sum(
+        1 for c in data.get("comments", [])
+        if not c.get("isResolved", True)
+    )
+
+    return PRDetail(
+        number=data["number"],
+        title=data["title"],
+        url=data["url"],
+        state=data["state"],
+        checks_status=_get_checks_status(data.get("statusCheckRollup")),
+        description=data.get("body", ""),
+        unresolved_comments=unresolved,
+        additions=data.get("additions", 0),
+        deletions=data.get("deletions", 0),
+    )
