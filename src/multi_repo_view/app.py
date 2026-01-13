@@ -18,6 +18,12 @@ from multi_repo_view.git_ops import (
     get_worktree_list,
 )
 from multi_repo_view.github_ops import get_pr_for_branch_async
+from multi_repo_view.modals import (
+    BranchDetailModal,
+    CopyPopup,
+    StashDetailModal,
+    WorktreeDetailModal,
+)
 from multi_repo_view.models import BranchInfo, RepoStatus, RepoSummary
 from multi_repo_view.themes import CatppuccinLatte, CatppuccinMocha
 from multi_repo_view.utils import format_relative_time, truncate
@@ -265,12 +271,24 @@ class MultiRepoViewApp(App):
     @on(DataTable.RowSelected)
     def on_row_selected(self, event: DataTable.RowSelected) -> None:
         """Handle row selection"""
+        row_key = str(event.row_key.value)
+
         if self._current_view == "repo_list":
-            row_key = event.row_key.value
             repo_path = Path(row_key)
             if repo_path in self._summaries:
                 self._selected_repo = repo_path
                 self._show_repo_detail_view(repo_path)
+
+        elif self._current_view == "repo_detail":
+            if row_key.startswith("branch:"):
+                branch_name = row_key.split(":", 1)[1]
+                self._show_branch_detail_modal(branch_name)
+            elif row_key.startswith("stash:"):
+                stash_name = row_key.split(":", 1)[1]
+                self._show_stash_detail_modal(stash_name)
+            elif row_key.startswith("worktree:"):
+                worktree_path = row_key.split(":", 1)[1]
+                self._show_worktree_detail_modal(worktree_path)
 
     def _show_repo_detail_view(self, repo_path: Path) -> None:
         """Show repo detail view"""
@@ -377,6 +395,37 @@ class MultiRepoViewApp(App):
         except Exception:
             pass
 
+    def _show_branch_detail_modal(self, branch_name: str) -> None:
+        """Show branch detail modal"""
+        if not self._selected_repo:
+            return
+
+        pr_detail = None
+
+        async def get_pr():
+            nonlocal pr_detail
+            from multi_repo_view.github_ops import get_pr_detail
+
+            pr_detail = await get_pr_detail(self._selected_repo, branch_name)
+
+        self.run_worker(get_pr(), exclusive=False)
+
+        self.push_screen(
+            BranchDetailModal(self._selected_repo, branch_name, pr_detail)
+        )
+
+    def _show_stash_detail_modal(self, stash_name: str) -> None:
+        """Show stash detail modal"""
+        if not self._selected_repo:
+            return
+        self.push_screen(StashDetailModal(self._selected_repo, stash_name))
+
+    def _show_worktree_detail_modal(self, worktree_path: str) -> None:
+        """Show worktree detail modal"""
+        if not self._selected_repo:
+            return
+        self.push_screen(WorktreeDetailModal(self._selected_repo, worktree_path))
+
     def action_cursor_down(self) -> None:
         """Move cursor down"""
         table = self.query_one(DataTable)
@@ -402,12 +451,31 @@ class MultiRepoViewApp(App):
     def action_select(self) -> None:
         """Select current row"""
         table = self.query_one(DataTable)
-        if table.cursor_row is not None:
-            row_key = table.get_row_at(table.cursor_row)[0]
-            if self._current_view == "repo_list":
-                self.on_row_selected(
-                    DataTable.RowSelected(table, row_key, table.cursor_row)
-                )
+        if table.cursor_row is None:
+            return
+
+        row_keys = list(table.rows.keys())
+        if table.cursor_row >= len(row_keys):
+            return
+
+        row_key = str(row_keys[table.cursor_row])
+
+        if self._current_view == "repo_list":
+            repo_path = Path(row_key)
+            if repo_path in self._summaries:
+                self._selected_repo = repo_path
+                self._show_repo_detail_view(repo_path)
+
+        elif self._current_view == "repo_detail":
+            if row_key.startswith("branch:"):
+                branch_name = row_key.split(":", 1)[1]
+                self._show_branch_detail_modal(branch_name)
+            elif row_key.startswith("stash:"):
+                stash_name = row_key.split(":", 1)[1]
+                self._show_stash_detail_modal(stash_name)
+            elif row_key.startswith("worktree:"):
+                worktree_path = row_key.split(":", 1)[1]
+                self._show_worktree_detail_modal(worktree_path)
 
     def action_back(self) -> None:
         """Go back to previous view"""
@@ -450,8 +518,44 @@ class MultiRepoViewApp(App):
                     pass
 
     def action_copy(self) -> None:
-        """Show copy popup"""
-        self.notify("Copy functionality coming soon")
+        """Show copy popup with context-aware options"""
+        table = self.query_one(DataTable)
+
+        branch_name = None
+        pr_number = None
+        pr_url = None
+        repo_path = None
+
+        if self._current_view == "repo_list":
+            if table.cursor_row is not None:
+                row_keys = list(table.rows.keys())
+                if table.cursor_row < len(row_keys):
+                    row_key = str(row_keys[table.cursor_row])
+                    repo_path = Path(row_key)
+                    summary = self._summaries.get(repo_path)
+                    if summary:
+                        branch_name = summary.current_branch
+                        if summary.pr_info:
+                            pr_number = summary.pr_info.number
+                            pr_url = summary.pr_info.url
+
+        elif self._current_view == "repo_detail":
+            repo_path = self._selected_repo
+            if table.cursor_row is not None:
+                row_keys = list(table.rows.keys())
+                if table.cursor_row < len(row_keys):
+                    row_key = str(row_keys[table.cursor_row])
+                    if row_key.startswith("branch:"):
+                        branch_name = row_key.split(":", 1)[1]
+
+        self.push_screen(
+            CopyPopup(
+                branch_name=branch_name,
+                pr_number=pr_number,
+                pr_url=pr_url,
+                repo_path=repo_path,
+            )
+        )
 
     def action_help(self) -> None:
         """Show help"""

@@ -406,3 +406,34 @@ async def get_upstream_repo(path: Path) -> str | None:
         return m.group(1)
 
     return None
+
+
+async def get_branch_detail_async(
+    path: Path,
+    branch_name: str,
+    pr_detail: "PRDetail | None" = None,
+) -> "BranchDetail":
+    """Aggregate all branch detail data in parallel"""
+    from multi_repo_view.models import BranchDetail
+
+    branches = await get_branch_list_async(path)
+    branch_info = next((b for b in branches if b.name == branch_name), None)
+
+    if not branch_info:
+        raise ValueError(f"Branch {branch_name} not found")
+
+    commits_ahead, commits_behind, (untracked, modified, staged) = await asyncio.gather(
+        get_commits_ahead(path, branch_name),
+        get_commits_behind(path, branch_name),
+        get_status_files_async(path),
+    )
+
+    return BranchDetail(
+        branch_info=branch_info,
+        pr_detail=pr_detail,
+        commits_ahead=commits_ahead,
+        commits_behind=commits_behind,
+        modified_files=modified,
+        staged_files=staged,
+        untracked_files=untracked,
+    )
