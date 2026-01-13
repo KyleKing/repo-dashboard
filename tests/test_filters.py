@@ -63,179 +63,194 @@ def _make_summary(
     )
 
 
-class TestFiltering:
-    def test_filter_all_returns_all(self):
-        summaries = {
-            Path("/tmp/repo1"): _make_summary("repo1", uncommitted=5),
-            Path("/tmp/repo2"): _make_summary("repo2"),
-            Path("/tmp/repo3"): _make_summary("repo3", ahead=2),
-        }
-        result = filter_repos(summaries, FilterMode.ALL)
-        assert len(result) == 3
-
-    def test_filter_dirty_keeps_dirty_repos(self):
-        summaries = {
-            Path("/tmp/repo1"): _make_summary("repo1", uncommitted=5),
-            Path("/tmp/repo2"): _make_summary("repo2"),
-            Path("/tmp/repo3"): _make_summary("repo3", ahead=2),
-        }
-        result = _filter_dirty(summaries)
-        assert len(result) == 2
-        assert Path("/tmp/repo1") in result
-        assert Path("/tmp/repo3") in result
-        assert Path("/tmp/repo2") not in result
-
-    def test_filter_dirty_includes_ahead(self):
-        summaries = {
-            Path("/tmp/repo1"): _make_summary("repo1", ahead=3),
-        }
-        result = _filter_dirty(summaries)
-        assert len(result) == 1
-
-    def test_filter_dirty_includes_uncommitted(self):
-        summaries = {
-            Path("/tmp/repo1"): _make_summary("repo1", uncommitted=2),
-        }
-        result = _filter_dirty(summaries)
-        assert len(result) == 1
-
-    def test_filter_ahead_keeps_only_ahead_repos(self):
-        summaries = {
-            Path("/tmp/repo1"): _make_summary("repo1", ahead=3),
-            Path("/tmp/repo2"): _make_summary("repo2", behind=1),
-            Path("/tmp/repo3"): _make_summary("repo3"),
-        }
-        result = _filter_ahead(summaries)
-        assert len(result) == 1
-        assert Path("/tmp/repo1") in result
-
-    def test_filter_behind_keeps_only_behind_repos(self):
-        summaries = {
-            Path("/tmp/repo1"): _make_summary("repo1", ahead=3),
-            Path("/tmp/repo2"): _make_summary("repo2", behind=2),
-            Path("/tmp/repo3"): _make_summary("repo3"),
-        }
-        result = _filter_behind(summaries)
-        assert len(result) == 1
-        assert Path("/tmp/repo2") in result
-
-    def test_filter_has_pr_keeps_only_pr_repos(self):
-        summaries = {
-            Path("/tmp/repo1"): _make_summary("repo1", has_pr=True),
-            Path("/tmp/repo2"): _make_summary("repo2"),
-            Path("/tmp/repo3"): _make_summary("repo3", has_pr=True),
-        }
-        result = _filter_has_pr(summaries)
-        assert len(result) == 2
-        assert Path("/tmp/repo1") in result
-        assert Path("/tmp/repo3") in result
-
-    def test_filter_has_stash_keeps_only_stash_repos(self):
-        summaries = {
-            Path("/tmp/repo1"): _make_summary("repo1", stash=2),
-            Path("/tmp/repo2"): _make_summary("repo2"),
-            Path("/tmp/repo3"): _make_summary("repo3", stash=1),
-        }
-        result = _filter_has_stash(summaries)
-        assert len(result) == 2
-        assert Path("/tmp/repo1") in result
-        assert Path("/tmp/repo3") in result
+def test_filter_all_returns_all() -> None:
+    summaries = {
+        Path("/tmp/repo1"): _make_summary("repo1", uncommitted=5),
+        Path("/tmp/repo2"): _make_summary("repo2"),
+        Path("/tmp/repo3"): _make_summary("repo3", ahead=2),
+    }
+    result = filter_repos(summaries, FilterMode.ALL)
+    assert len(result) == 3
 
 
-class TestSorting:
-    def test_sort_by_name_alphabetical(self):
-        summaries = {
-            Path("/tmp/zebra"): _make_summary("zebra"),
-            Path("/tmp/apple"): _make_summary("apple"),
-            Path("/tmp/mango"): _make_summary("mango"),
-        }
-        paths = list(summaries.keys())
-        result = _sort_by_name(paths, summaries)
-        names = [summaries[p].name for p in result]
-        assert names == ["apple", "mango", "zebra"]
-
-    def test_sort_by_name_case_insensitive(self):
-        summaries = {
-            Path("/tmp/Zebra"): _make_summary("Zebra"),
-            Path("/tmp/apple"): _make_summary("apple"),
-            Path("/tmp/Mango"): _make_summary("Mango"),
-        }
-        paths = list(summaries.keys())
-        result = _sort_by_name(paths, summaries)
-        names = [summaries[p].name for p in result]
-        assert names == ["apple", "Mango", "Zebra"]
-
-    def test_sort_by_modified_newest_first(self):
-        summaries = {
-            Path("/tmp/old"): _make_summary("old", modified_days_ago=10),
-            Path("/tmp/new"): _make_summary("new", modified_days_ago=1),
-            Path("/tmp/medium"): _make_summary("medium", modified_days_ago=5),
-        }
-        paths = list(summaries.keys())
-        result = _sort_by_modified(paths, summaries)
-        names = [summaries[p].name for p in result]
-        assert names == ["new", "medium", "old"]
-
-    def test_sort_by_status_dirty_first(self):
-        summaries = {
-            Path("/tmp/clean"): _make_summary("clean"),
-            Path("/tmp/dirty1"): _make_summary("dirty1", uncommitted=5),
-            Path("/tmp/dirty2"): _make_summary("dirty2", uncommitted=2),
-        }
-        paths = list(summaries.keys())
-        result = _sort_by_status(paths, summaries)
-        names = [summaries[p].name for p in result]
-        assert names[0] in ["dirty1", "dirty2"]
-        assert names[-1] == "clean"
-
-    def test_sort_by_status_higher_uncommitted_first(self):
-        summaries = {
-            Path("/tmp/dirty1"): _make_summary("dirty1", uncommitted=2),
-            Path("/tmp/dirty2"): _make_summary("dirty2", uncommitted=5),
-        }
-        paths = list(summaries.keys())
-        result = _sort_by_status(paths, summaries)
-        names = [summaries[p].name for p in result]
-        assert names == ["dirty2", "dirty1"]
-
-    def test_sort_by_branch_alphabetical(self):
-        summaries = {
-            Path("/tmp/repo1"): _make_summary("repo1", branch="feature"),
-            Path("/tmp/repo2"): _make_summary("repo2", branch="main"),
-            Path("/tmp/repo3"): _make_summary("repo3", branch="develop"),
-        }
-        paths = list(summaries.keys())
-        result = _sort_by_branch(paths, summaries)
-        branches = [summaries[p].current_branch for p in result]
-        assert branches == ["develop", "feature", "main"]
-
-    def test_sort_repos_with_mode(self):
-        summaries = {
-            Path("/tmp/zebra"): _make_summary("zebra"),
-            Path("/tmp/apple"): _make_summary("apple"),
-        }
-        paths = list(summaries.keys())
-        result = sort_repos(paths, summaries, SortMode.NAME)
-        names = [summaries[p].name for p in result]
-        assert names == ["apple", "zebra"]
+def test_filter_dirty_keeps_dirty_repos() -> None:
+    summaries = {
+        Path("/tmp/repo1"): _make_summary("repo1", uncommitted=5),
+        Path("/tmp/repo2"): _make_summary("repo2"),
+        Path("/tmp/repo3"): _make_summary("repo3", ahead=2),
+    }
+    result = _filter_dirty(summaries)
+    assert len(result) == 2
+    assert Path("/tmp/repo1") in result
+    assert Path("/tmp/repo3") in result
+    assert Path("/tmp/repo2") not in result
 
 
-class TestFuzzyMatch:
-    def test_fuzzy_match_exact(self):
-        assert _fuzzy_match_name("api-service", "api-service")
+def test_filter_dirty_includes_ahead() -> None:
+    summaries = {
+        Path("/tmp/repo1"): _make_summary("repo1", ahead=3),
+    }
+    result = _filter_dirty(summaries)
+    assert len(result) == 1
 
-    def test_fuzzy_match_partial(self):
-        assert _fuzzy_match_name("api-service", "api")
 
-    def test_fuzzy_match_case_insensitive(self):
-        assert _fuzzy_match_name("API-Service", "api")
+def test_filter_dirty_includes_uncommitted() -> None:
+    summaries = {
+        Path("/tmp/repo1"): _make_summary("repo1", uncommitted=2),
+    }
+    result = _filter_dirty(summaries)
+    assert len(result) == 1
 
-    def test_fuzzy_match_no_match(self):
-        assert not _fuzzy_match_name("api-service", "xyz")
 
-    def test_fuzzy_match_empty_search(self):
-        assert _fuzzy_match_name("any-name", "")
+def test_filter_ahead_keeps_only_ahead_repos() -> None:
+    summaries = {
+        Path("/tmp/repo1"): _make_summary("repo1", ahead=3),
+        Path("/tmp/repo2"): _make_summary("repo2", behind=1),
+        Path("/tmp/repo3"): _make_summary("repo3"),
+    }
+    result = _filter_ahead(summaries)
+    assert len(result) == 1
+    assert Path("/tmp/repo1") in result
 
-    def test_fuzzy_match_threshold(self):
-        result = _fuzzy_match_name("similar", "somilar", threshold=0.7)
-        assert result
+
+def test_filter_behind_keeps_only_behind_repos() -> None:
+    summaries = {
+        Path("/tmp/repo1"): _make_summary("repo1", ahead=3),
+        Path("/tmp/repo2"): _make_summary("repo2", behind=2),
+        Path("/tmp/repo3"): _make_summary("repo3"),
+    }
+    result = _filter_behind(summaries)
+    assert len(result) == 1
+    assert Path("/tmp/repo2") in result
+
+
+def test_filter_has_pr_keeps_only_pr_repos() -> None:
+    summaries = {
+        Path("/tmp/repo1"): _make_summary("repo1", has_pr=True),
+        Path("/tmp/repo2"): _make_summary("repo2"),
+        Path("/tmp/repo3"): _make_summary("repo3", has_pr=True),
+    }
+    result = _filter_has_pr(summaries)
+    assert len(result) == 2
+    assert Path("/tmp/repo1") in result
+    assert Path("/tmp/repo3") in result
+
+
+def test_filter_has_stash_keeps_only_stash_repos() -> None:
+    summaries = {
+        Path("/tmp/repo1"): _make_summary("repo1", stash=2),
+        Path("/tmp/repo2"): _make_summary("repo2"),
+        Path("/tmp/repo3"): _make_summary("repo3", stash=1),
+    }
+    result = _filter_has_stash(summaries)
+    assert len(result) == 2
+    assert Path("/tmp/repo1") in result
+    assert Path("/tmp/repo3") in result
+
+
+def test_sort_by_name_alphabetical() -> None:
+    summaries = {
+        Path("/tmp/zebra"): _make_summary("zebra"),
+        Path("/tmp/apple"): _make_summary("apple"),
+        Path("/tmp/mango"): _make_summary("mango"),
+    }
+    paths = list(summaries.keys())
+    result = _sort_by_name(paths, summaries)
+    names = [summaries[p].name for p in result]
+    assert names == ["apple", "mango", "zebra"]
+
+
+def test_sort_by_name_case_insensitive() -> None:
+    summaries = {
+        Path("/tmp/Zebra"): _make_summary("Zebra"),
+        Path("/tmp/apple"): _make_summary("apple"),
+        Path("/tmp/Mango"): _make_summary("Mango"),
+    }
+    paths = list(summaries.keys())
+    result = _sort_by_name(paths, summaries)
+    names = [summaries[p].name for p in result]
+    assert names == ["apple", "Mango", "Zebra"]
+
+
+def test_sort_by_modified_newest_first() -> None:
+    summaries = {
+        Path("/tmp/old"): _make_summary("old", modified_days_ago=10),
+        Path("/tmp/new"): _make_summary("new", modified_days_ago=1),
+        Path("/tmp/medium"): _make_summary("medium", modified_days_ago=5),
+    }
+    paths = list(summaries.keys())
+    result = _sort_by_modified(paths, summaries)
+    names = [summaries[p].name for p in result]
+    assert names == ["new", "medium", "old"]
+
+
+def test_sort_by_status_dirty_first() -> None:
+    summaries = {
+        Path("/tmp/clean"): _make_summary("clean"),
+        Path("/tmp/dirty1"): _make_summary("dirty1", uncommitted=5),
+        Path("/tmp/dirty2"): _make_summary("dirty2", uncommitted=2),
+    }
+    paths = list(summaries.keys())
+    result = _sort_by_status(paths, summaries)
+    names = [summaries[p].name for p in result]
+    assert names[0] in ["dirty1", "dirty2"]
+    assert names[-1] == "clean"
+
+
+def test_sort_by_status_higher_uncommitted_first() -> None:
+    summaries = {
+        Path("/tmp/dirty1"): _make_summary("dirty1", uncommitted=2),
+        Path("/tmp/dirty2"): _make_summary("dirty2", uncommitted=5),
+    }
+    paths = list(summaries.keys())
+    result = _sort_by_status(paths, summaries)
+    names = [summaries[p].name for p in result]
+    assert names == ["dirty2", "dirty1"]
+
+
+def test_sort_by_branch_alphabetical() -> None:
+    summaries = {
+        Path("/tmp/repo1"): _make_summary("repo1", branch="feature"),
+        Path("/tmp/repo2"): _make_summary("repo2", branch="main"),
+        Path("/tmp/repo3"): _make_summary("repo3", branch="develop"),
+    }
+    paths = list(summaries.keys())
+    result = _sort_by_branch(paths, summaries)
+    branches = [summaries[p].current_branch for p in result]
+    assert branches == ["develop", "feature", "main"]
+
+
+def test_sort_repos_with_mode() -> None:
+    summaries = {
+        Path("/tmp/zebra"): _make_summary("zebra"),
+        Path("/tmp/apple"): _make_summary("apple"),
+    }
+    paths = list(summaries.keys())
+    result = sort_repos(paths, summaries, SortMode.NAME)
+    names = [summaries[p].name for p in result]
+    assert names == ["apple", "zebra"]
+
+
+def test_fuzzy_match_exact() -> None:
+    assert _fuzzy_match_name("api-service", "api-service")
+
+
+def test_fuzzy_match_partial() -> None:
+    assert _fuzzy_match_name("api-service", "api")
+
+
+def test_fuzzy_match_case_insensitive() -> None:
+    assert _fuzzy_match_name("API-Service", "api")
+
+
+def test_fuzzy_match_no_match() -> None:
+    assert not _fuzzy_match_name("api-service", "xyz")
+
+
+def test_fuzzy_match_empty_search() -> None:
+    assert _fuzzy_match_name("any-name", "")
+
+
+def test_fuzzy_match_threshold() -> None:
+    result = _fuzzy_match_name("similar", "somilar", threshold=0.7)
+    assert result

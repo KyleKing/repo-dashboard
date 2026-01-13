@@ -14,12 +14,10 @@
 
 ## Future Enhancements (Low Priority)
 
-1. **CLI-only mode** - `--cli` flag for non-interactive JSON output
-2. **gh-poi integration** - Identify safe-to-delete branches
-3. **Full Catppuccin themes** - Replace textual themes with full palette
-4. **Custom TCSS support** - Load user theme from `~/.config/multi-repo-view/theme.tcss`
-5. **Configuration file** - Custom keybindings in `~/.config/multi-repo-view/config.toml`
-6. **jj-vcs support** - Support Jujutsu version control
+1. **Full Catppuccin themes** - Replace textual themes with full palette
+1. **CLI-only mode** - `--cli` flag for non-interactive JSON output (only from cache, not new retrievals for performance unless requested)
+1. **gh-poi integration** - Identify safe-to-delete branches
+1. **jj-vcs support** - Support Jujutsu version control
 
 ## Commands
 

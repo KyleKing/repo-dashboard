@@ -61,100 +61,101 @@ def tmp_repos(tmp_path: Path) -> list[Path]:
     return [repo1, repo2]
 
 
-class TestAppBasics:
-    @pytest.mark.asyncio
-    async def test_shows_warning_when_no_repos(self, tmp_path: Path) -> None:
-        """Test that app shows warning when no repos found"""
-        empty_dir = tmp_path / "empty"
-        empty_dir.mkdir()
+@pytest.mark.asyncio
+async def test_shows_warning_when_no_repos(tmp_path: Path) -> None:
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
 
-        app = MultiRepoViewApp(
-            scan_paths=[empty_dir],
-            scan_depth=1,
-            theme="dark",
-        )
+    app = MultiRepoViewApp(
+        scan_paths=[empty_dir],
+        scan_depth=1,
+        theme="dark",
+    )
 
-        async with app.run_test() as pilot:
-            await pilot.pause()
+    async with app.run_test() as pilot:
+        await pilot.pause()
 
-    @pytest.mark.asyncio
-    async def test_creates_datatable_on_mount(self, tmp_repos: list[Path]) -> None:
-        """Test that app creates DataTable on mount"""
-        app = MultiRepoViewApp(
-            scan_paths=[tmp_repos[0].parent],
-            scan_depth=1,
-            theme="dark",
-        )
 
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            table = app.query_one(DataTable)
-            assert table is not None
+@pytest.mark.asyncio
+async def test_creates_datatable_on_mount(tmp_repos: list[Path]) -> None:
+    app = MultiRepoViewApp(
+        scan_paths=[tmp_repos[0].parent],
+        scan_depth=1,
+        theme="dark",
+    )
 
-    @pytest.mark.asyncio
-    async def test_datatable_has_correct_columns(self, tmp_repos: list[Path]) -> None:
-        """Test that DataTable has correct column headers"""
-        app = MultiRepoViewApp(
-            scan_paths=[tmp_repos[0].parent],
-            scan_depth=1,
-            theme="dark",
-        )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        table = app.query_one(DataTable)
+        assert table is not None
 
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            table = app.query_one(DataTable)
-            columns = [col.label.plain for col in table.columns.values()]
-            assert any("Name" in col for col in columns)
-            assert any("Branch" in col for col in columns)
-            assert any("Status" in col for col in columns)
 
-    @pytest.mark.asyncio
-    async def test_cycle_filter_changes_mode(self, tmp_repos: list[Path]) -> None:
-        app = MultiRepoViewApp(
-            scan_paths=[tmp_repos[0].parent],
-            scan_depth=1,
-            theme="dark",
-        )
+@pytest.mark.asyncio
+async def test_datatable_has_correct_columns(tmp_repos: list[Path]) -> None:
+    app = MultiRepoViewApp(
+        scan_paths=[tmp_repos[0].parent],
+        scan_depth=1,
+        theme="dark",
+    )
 
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            assert app._filter_mode == FilterMode.ALL
-            await pilot.press("f")
-            assert app._filter_mode == FilterMode.DIRTY
-            await pilot.press("f")
-            assert app._filter_mode == FilterMode.AHEAD
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        table = app.query_one(DataTable)
+        columns = [col.label.plain for col in table.columns.values()]
+        assert any("Name" in col for col in columns)
+        assert any("Branch" in col for col in columns)
+        assert any("Status" in col for col in columns)
 
-    @pytest.mark.asyncio
-    async def test_cycle_sort_changes_mode(self, tmp_repos: list[Path]) -> None:
-        app = MultiRepoViewApp(
-            scan_paths=[tmp_repos[0].parent],
-            scan_depth=1,
-            theme="dark",
-        )
 
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            assert app._sort_mode == SortMode.NAME
-            await pilot.press("s")
-            assert app._sort_mode == SortMode.MODIFIED
-            await pilot.press("s")
-            assert app._sort_mode == SortMode.STATUS
+@pytest.mark.asyncio
+async def test_cycle_filter_changes_mode(tmp_repos: list[Path]) -> None:
+    app = MultiRepoViewApp(
+        scan_paths=[tmp_repos[0].parent],
+        scan_depth=1,
+        theme="dark",
+    )
 
-    @pytest.mark.asyncio
-    async def test_refresh_resets_filter_and_sort(self, tmp_repos: list[Path]) -> None:
-        app = MultiRepoViewApp(
-            scan_paths=[tmp_repos[0].parent],
-            scan_depth=1,
-            theme="dark",
-        )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app._filter_mode == FilterMode.ALL
+        await pilot.press("f")
+        assert app._filter_mode == FilterMode.DIRTY
+        await pilot.press("f")
+        assert app._filter_mode == FilterMode.AHEAD
 
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            await pilot.press("f")
-            await pilot.press("s")
-            assert app._filter_mode != FilterMode.ALL
-            assert app._sort_mode != SortMode.NAME
-            await pilot.press("r")
-            await pilot.pause()
-            assert app._filter_mode == FilterMode.ALL
-            assert app._sort_mode == SortMode.NAME
+
+@pytest.mark.asyncio
+async def test_cycle_sort_changes_mode(tmp_repos: list[Path]) -> None:
+    app = MultiRepoViewApp(
+        scan_paths=[tmp_repos[0].parent],
+        scan_depth=1,
+        theme="dark",
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app._sort_mode == SortMode.NAME
+        await pilot.press("s")
+        assert app._sort_mode == SortMode.MODIFIED
+        await pilot.press("s")
+        assert app._sort_mode == SortMode.STATUS
+
+
+@pytest.mark.asyncio
+async def test_refresh_resets_filter_and_sort(tmp_repos: list[Path]) -> None:
+    app = MultiRepoViewApp(
+        scan_paths=[tmp_repos[0].parent],
+        scan_depth=1,
+        theme="dark",
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("f")
+        await pilot.press("s")
+        assert app._filter_mode != FilterMode.ALL
+        assert app._sort_mode != SortMode.NAME
+        await pilot.press("r")
+        await pilot.pause()
+        assert app._filter_mode == FilterMode.ALL
+        assert app._sort_mode == SortMode.NAME
