@@ -6,7 +6,14 @@ import pytest
 from textual.widgets import DataTable
 
 from multi_repo_view.app import MultiRepoViewApp
-from multi_repo_view.models import BranchInfo, PRInfo, RepoStatus, RepoSummary
+from multi_repo_view.models import (
+    BranchInfo,
+    FilterMode,
+    PRInfo,
+    RepoStatus,
+    RepoSummary,
+    SortMode,
+)
 
 
 def _make_summary(
@@ -97,6 +104,57 @@ class TestAppBasics:
             await pilot.pause()
             table = app.query_one(DataTable)
             columns = [col.label.plain for col in table.columns.values()]
-            assert "Name" in columns
-            assert "Branch" in columns
-            assert "Status" in columns
+            assert any("Name" in col for col in columns)
+            assert any("Branch" in col for col in columns)
+            assert any("Status" in col for col in columns)
+
+    @pytest.mark.asyncio
+    async def test_cycle_filter_changes_mode(self, tmp_repos: list[Path]) -> None:
+        app = MultiRepoViewApp(
+            scan_paths=[tmp_repos[0].parent],
+            scan_depth=1,
+            theme="dark",
+        )
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app._filter_mode == FilterMode.ALL
+            await pilot.press("f")
+            assert app._filter_mode == FilterMode.DIRTY
+            await pilot.press("f")
+            assert app._filter_mode == FilterMode.AHEAD
+
+    @pytest.mark.asyncio
+    async def test_cycle_sort_changes_mode(self, tmp_repos: list[Path]) -> None:
+        app = MultiRepoViewApp(
+            scan_paths=[tmp_repos[0].parent],
+            scan_depth=1,
+            theme="dark",
+        )
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app._sort_mode == SortMode.NAME
+            await pilot.press("s")
+            assert app._sort_mode == SortMode.MODIFIED
+            await pilot.press("s")
+            assert app._sort_mode == SortMode.STATUS
+
+    @pytest.mark.asyncio
+    async def test_refresh_resets_filter_and_sort(self, tmp_repos: list[Path]) -> None:
+        app = MultiRepoViewApp(
+            scan_paths=[tmp_repos[0].parent],
+            scan_depth=1,
+            theme="dark",
+        )
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("f")
+            await pilot.press("s")
+            assert app._filter_mode != FilterMode.ALL
+            assert app._sort_mode != SortMode.NAME
+            await pilot.press("r")
+            await pilot.pause()
+            assert app._filter_mode == FilterMode.ALL
+            assert app._sort_mode == SortMode.NAME

@@ -5,10 +5,10 @@ from pathlib import Path
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Vertical
+from textual.containers import Container
 from textual.widgets import DataTable, Footer, Static
 
-from multi_repo_view.cache import pr_cache
+from multi_repo_view.cache import branch_cache, commit_cache, pr_cache
 from multi_repo_view.discovery import discover_git_repos
 from multi_repo_view.git_ops import (
     get_branch_list_async,
@@ -21,11 +21,17 @@ from multi_repo_view.github_ops import get_pr_for_branch_async
 from multi_repo_view.modals import (
     BranchDetailModal,
     CopyPopup,
+    HelpModal,
     StashDetailModal,
     WorktreeDetailModal,
 )
-from multi_repo_view.models import BranchInfo, RepoStatus, RepoSummary
-from multi_repo_view.themes import CatppuccinLatte, CatppuccinMocha
+from multi_repo_view.models import (
+    BranchInfo,
+    FilterMode,
+    RepoStatus,
+    RepoSummary,
+    SortMode,
+)
 from multi_repo_view.utils import format_relative_time, truncate
 
 
@@ -101,6 +107,8 @@ class MultiRepoViewApp(App):
         Binding("enter", "select", "Select", show=False),
         Binding("escape", "back", "Back", show=False),
         Binding("c", "copy", "Copy"),
+        Binding("f", "cycle_filter", "Filter"),
+        Binding("s", "cycle_sort", "Sort"),
         Binding("?", "help", "Help"),
     ]
 
@@ -119,9 +127,13 @@ class MultiRepoViewApp(App):
         self._current_view = "repo_list"
         self._selected_repo: Path | None = None
         self._breadcrumb_path: list[str] = []
+        self._filter_mode: FilterMode = FilterMode.ALL
+        self._sort_mode: SortMode = SortMode.NAME
+        self._filter_text: str = ""
 
     def compose(self) -> ComposeResult:
         yield Breadcrumbs([])
+        yield Static("", id="filter-sort-status")
         with Container(id="main-container"):
             yield DataTable(id="main-table", zebra_stripes=True)
         yield Footer()
@@ -166,6 +178,7 @@ class MultiRepoViewApp(App):
 
         breadcrumbs = self.query_one(Breadcrumbs)
         breadcrumbs.update_path([])
+        self._update_filter_sort_status()
 
     def _start_progressive_load(self) -> None:
         """Load repo summaries progressively"""
@@ -218,52 +231,104 @@ class MultiRepoViewApp(App):
         self._summaries[path] = summary
         self._update_repo_table_row(path, summary)
 
+    def _refresh_table_with_filters(self) -> None:
+        from multi_repo_view.filters import filter_repos, sort_repos
+
+        if self._current_view != "repo_list":
+            return
+
+        filtered = filter_repos(self._summaries, self._filter_mode, self._filter_text)
+        sorted_paths = sort_repos(list(filtered.keys()), filtered, self._sort_mode)
+
+        table = self.query_one(DataTable)
+        table.clear(columns=True)
+
+        sort_indicators = {
+            SortMode.NAME: ("↓", "", "", "", ""),
+            SortMode.MODIFIED: ("", "", "", "", "↓"),
+            SortMode.STATUS: ("", "", "↓", "", ""),
+            SortMode.BRANCH: ("", "↓", "", "", ""),
+        }
+        indicators = sort_indicators.get(self._sort_mode, ("", "", "", "", ""))
+
+        table.add_column(f"Name {indicators[0]}".strip(), width=30)
+        table.add_column(f"Branch {indicators[1]}".strip(), width=25)
+        table.add_column(f"Status {indicators[2]}".strip(), width=20)
+        table.add_column("PR", width=45)
+        table.add_column(f"Modified {indicators[4]}".strip(), width=15)
+        table.cursor_type = "row"
+        table.zebra_stripes = True
+
+        for repo_path in sorted_paths:
+            summary = filtered[repo_path]
+            status_icon = "⚠ " if summary.status != RepoStatus.OK else ""
+            pr_text = (
+                f"#{summary.pr_info.number}: {summary.pr_info.title}"
+                if summary.pr_info
+                else "—"
+            )
+
+            table.add_row(
+                truncate(summary.name, 28),
+                truncate(summary.current_branch, 23),
+                f"{status_icon}{summary.status_summary}",
+                truncate(pr_text, 43),
+                format_relative_time(summary.last_modified),
+                key=str(repo_path),
+            )
+
     def _update_repo_table_row(self, path: Path, summary: RepoSummary) -> None:
         """Update single row in repo list table"""
-        table = self.query_one(DataTable)
-        row_key = str(path)
-
-        status_icon = "⚠ " if summary.status != RepoStatus.OK else ""
-        pr_text = (
-            f"#{summary.pr_info.number}: {summary.pr_info.title}"
-            if summary.pr_info
-            else "—"
-        )
-
-        try:
-            table.update_cell(row_key, "Name", truncate(summary.name, 28))
-            table.update_cell(
-                row_key, "Branch", truncate(summary.current_branch, 23)
-            )
-            table.update_cell(
-                row_key, "Status", f"{status_icon}{summary.status_summary}"
-            )
-            table.update_cell(row_key, "PR", truncate(pr_text, 43))
-            table.update_cell(
-                row_key, "Modified", format_relative_time(summary.last_modified)
-            )
-        except Exception:
-            pass
-
+        self._refresh_table_with_filters()
         self._update_status_badges()
+
+    def _update_filter_sort_status(self) -> None:
+        """Update prominent filter/sort status indicator"""
+        status_widget = self.query_one("#filter-sort-status", Static)
+
+        parts = []
+        if self._filter_mode != FilterMode.ALL:
+            parts.append(f"[bold yellow]FILTER:[/bold yellow] {self._filter_mode.value}")
+
+        if self._sort_mode != SortMode.NAME:
+            parts.append(f"[bold cyan]SORT:[/bold cyan] {self._sort_mode.value}")
+
+        if parts:
+            status_widget.update("  ".join(parts))
+            status_widget.styles.display = "block"
+        else:
+            status_widget.update("")
+            status_widget.styles.display = "none"
 
     def _update_status_badges(self) -> None:
         """Update status badges in breadcrumb bar"""
+        from multi_repo_view.filters import filter_repos
+
         if self._current_view != "repo_list":
             return
 
         total = len(self._repo_paths)
-        loaded = len(self._summaries)
-        dirty = sum(
-            1 for s in self._summaries.values() if s.uncommitted_count > 0
-        )
-        with_pr = sum(1 for s in self._summaries.values() if s.pr_info)
+        filtered = filter_repos(self._summaries, self._filter_mode, self._filter_text)
+        visible = len(filtered)
+
+        dirty = sum(1 for s in filtered.values() if s.uncommitted_count > 0)
+        with_pr = sum(1 for s in filtered.values() if s.pr_info)
 
         badges = [
-            StatusBadge("repos", f"{loaded}/{total}", "white", "grey37"),
+            StatusBadge("repos", f"{visible}/{total}", "white", "grey37"),
             StatusBadge("dirty", str(dirty), "white", "darkorange3"),
             StatusBadge("PRs", str(with_pr), "white", "green4"),
         ]
+
+        if self._filter_mode != FilterMode.ALL:
+            badges.append(
+                StatusBadge("filter", self._filter_mode.value, "black", "yellow3")
+            )
+
+        if self._sort_mode != SortMode.NAME:
+            badges.append(
+                StatusBadge("sort", self._sort_mode.value, "black", "cyan3")
+            )
 
         breadcrumbs = self.query_one(Breadcrumbs)
         breadcrumbs.update_badges(badges)
@@ -485,12 +550,17 @@ class MultiRepoViewApp(App):
             self._breadcrumb_path = []
             self._show_repo_list_table()
             self._update_status_badges()
+            self._update_filter_sort_status()
             self._start_progressive_load()
 
     def action_refresh(self) -> None:
         """Refresh all data"""
         pr_cache.clear()
+        branch_cache.clear()
+        commit_cache.clear()
         self._summaries.clear()
+        self._filter_mode = FilterMode.ALL
+        self._sort_mode = SortMode.NAME
 
         if self._current_view == "repo_list":
             self._show_repo_list_table()
@@ -557,17 +627,22 @@ class MultiRepoViewApp(App):
             )
         )
 
+    def action_cycle_filter(self) -> None:
+        modes = list(FilterMode)
+        current_idx = modes.index(self._filter_mode)
+        self._filter_mode = modes[(current_idx + 1) % len(modes)]
+        self._refresh_table_with_filters()
+        self._update_status_badges()
+        self._update_filter_sort_status()
+
+    def action_cycle_sort(self) -> None:
+        modes = list(SortMode)
+        current_idx = modes.index(self._sort_mode)
+        self._sort_mode = modes[(current_idx + 1) % len(modes)]
+        self._refresh_table_with_filters()
+        self._update_status_badges()
+        self._update_filter_sort_status()
+
     def action_help(self) -> None:
-        """Show help"""
-        help_text = """
-j/k or ↓/↑: Navigate
-g/G: Jump to top/bottom
-Space/Enter: Select
-Esc: Back
-o: Open PR
-c: Copy
-r: Refresh
-q: Quit
-?: Help
-        """.strip()
-        self.notify(help_text)
+        """Show help modal"""
+        self.push_screen(HelpModal(self.theme_name))

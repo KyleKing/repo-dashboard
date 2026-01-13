@@ -3,7 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from multi_repo_view.modals import _format_commits, _format_files, _format_pr_detail
+from multi_repo_view.modals import (
+    HelpModal,
+    _format_commits,
+    _format_files,
+    _format_pr_detail,
+)
 from multi_repo_view.models import CommitInfo, PRDetail
 
 
@@ -164,3 +169,15 @@ class TestFormatPRDetail:
         result = _format_pr_detail(pr)
         assert "..." in result
         assert len(result) < 600
+
+
+class TestHelpModal:
+    def test_help_modal_creates_with_theme(self):
+        modal = HelpModal("dark")
+        assert modal.theme_name == "dark"
+
+    def test_help_modal_stores_theme_name(self):
+        modal_dark = HelpModal("dark")
+        modal_light = HelpModal("light")
+        assert modal_dark.theme_name == "dark"
+        assert modal_light.theme_name == "light"

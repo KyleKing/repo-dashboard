@@ -5,12 +5,13 @@ def truncate(text: str, max_length: int, suffix: str = "~") -> str:
     """Truncate text with suffix if longer than max_length"""
     if len(text) <= max_length:
         return text.ljust(max_length)
-    return text[:max_length - len(suffix)] + suffix
+    return text[: max_length - len(suffix)] + suffix
 
 
 def format_relative_time(dt: datetime) -> str:
     """Format datetime as relative time (e.g., '2h ago')"""
-    delta = datetime.now() - dt
+    dt_naive = dt.replace(tzinfo=None) if dt.tzinfo else dt
+    delta = datetime.now() - dt_naive
 
     if delta.days > 365:
         years = delta.days // 365

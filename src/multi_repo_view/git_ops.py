@@ -4,6 +4,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from multi_repo_view.cache import branch_cache, commit_cache
 from multi_repo_view.models import (
     BranchInfo,
     CommitInfo,
@@ -121,6 +122,10 @@ def get_branch_list(path: Path) -> list[BranchInfo]:
 
 
 async def get_branch_list_async(path: Path) -> list[BranchInfo]:
+    cache_key = f"{path}:branches"
+    if cached := branch_cache.get(cache_key):
+        return cached
+
     output, current = await asyncio.gather(
         _run_git_async(
             path,
@@ -130,7 +135,9 @@ async def get_branch_list_async(path: Path) -> list[BranchInfo]:
         ),
         get_current_branch_async(path),
     )
-    return _parse_branch_list(output, current)
+    result = _parse_branch_list(output, current)
+    branch_cache.set(cache_key, result)
+    return result
 
 
 def _parse_status_files(output: str) -> tuple[list[str], list[str], list[str]]:
@@ -169,7 +176,9 @@ def get_repo_summary(path: Path) -> RepoSummary:
     ahead, behind = _get_ahead_behind(path)
     try:
         last_commit = _run_git(path, "log", "-1", "--format=%ai")
-        last_modified = datetime.fromisoformat(last_commit) if last_commit else datetime.now()
+        last_modified = (
+            datetime.fromisoformat(last_commit) if last_commit else datetime.now()
+        )
     except Exception:
         last_modified = datetime.now()
 
@@ -190,11 +199,20 @@ def get_repo_summary(path: Path) -> RepoSummary:
 
 async def get_repo_summary_async(path: Path) -> RepoSummary:
     try:
-        current_branch, (ahead, behind), uncommitted, last_modified = await asyncio.gather(
+        (
+            current_branch,
+            (ahead, behind),
+            uncommitted,
+            last_modified,
+            stash_count,
+            worktree_count,
+        ) = await asyncio.gather(
             get_current_branch_async(path),
             _get_ahead_behind_async(path),
             _get_uncommitted_count_async(path),
             get_last_modified_time(path),
+            get_stash_count(path),
+            get_worktree_count(path),
         )
         return RepoSummary(
             path=path,
@@ -203,8 +221,8 @@ async def get_repo_summary_async(path: Path) -> RepoSummary:
             ahead_count=ahead,
             behind_count=behind,
             uncommitted_count=uncommitted,
-            stash_count=0,
-            worktree_count=0,
+            stash_count=stash_count,
+            worktree_count=worktree_count,
             pr_info=None,
             last_modified=last_modified,
             status=RepoStatus.OK,
@@ -227,13 +245,23 @@ async def get_repo_summary_async(path: Path) -> RepoSummary:
 
 async def get_worktree_count(path: Path) -> int:
     """Get count of git worktrees (simple detection)"""
+    cache_key = f"{path}:worktree_count"
+    if cached := commit_cache.get(cache_key):
+        return cached
+
     output = await _run_git_async(path, "worktree", "list", "--porcelain")
     count = len([line for line in output.splitlines() if line.startswith("worktree ")])
-    return max(0, count - 1)
+    result = max(0, count - 1)
+    commit_cache.set(cache_key, result)
+    return result
 
 
 async def get_worktree_list(path: Path) -> list[WorktreeInfo]:
     """Get list of all worktrees"""
+    cache_key = f"{path}:worktrees"
+    if cached := commit_cache.get(cache_key):
+        return cached
+
     output = await _run_git_async(path, "worktree", "list", "--porcelain")
 
     worktrees = []
@@ -254,7 +282,9 @@ async def get_worktree_list(path: Path) -> list[WorktreeInfo]:
     if current:
         worktrees.append(_parse_worktree(current))
 
-    return worktrees[1:] if len(worktrees) > 1 else []
+    result = worktrees[1:] if len(worktrees) > 1 else []
+    commit_cache.set(cache_key, result)
+    return result
 
 
 def _parse_worktree(data: dict) -> WorktreeInfo:
@@ -268,12 +298,22 @@ def _parse_worktree(data: dict) -> WorktreeInfo:
 
 async def get_stash_count(path: Path) -> int:
     """Get count of stashes"""
+    cache_key = f"{path}:stash_count"
+    if cached := commit_cache.get(cache_key):
+        return cached
+
     output = await _run_git_async(path, "stash", "list")
-    return len(output.splitlines()) if output else 0
+    count = len(output.splitlines()) if output else 0
+    commit_cache.set(cache_key, count)
+    return count
 
 
 async def get_stash_list(path: Path) -> list[dict]:
     """Get list of stashes (lazy loaded)"""
+    cache_key = f"{path}:stashes"
+    if cached := commit_cache.get(cache_key):
+        return cached
+
     output = await _run_git_async(
         path,
         "stash",
@@ -287,13 +327,16 @@ async def get_stash_list(path: Path) -> list[dict]:
             continue
         parts = line.split("|", 3)
         if len(parts) == 4:
-            stashes.append({
-                "name": parts[0],
-                "message": parts[1],
-                "reflog": parts[2],
-                "time": parts[3],
-            })
+            stashes.append(
+                {
+                    "name": parts[0],
+                    "message": parts[1],
+                    "reflog": parts[2],
+                    "time": parts[3],
+                }
+            )
 
+    commit_cache.set(cache_key, stashes)
     return stashes
 
 
@@ -301,13 +344,15 @@ async def get_stash_detail(path: Path, stash_name: str) -> StashDetail:
     """Get detailed stash information"""
     info_output = await _run_git_async(
         path,
-        "stash",
-        "list",
-        "--format=%gd|%gs|%gD|%ai",
+        "log",
+        "-1",
+        "--format=%ai|%s",
         stash_name,
     )
 
-    parts = info_output.split("|", 3)
+    parts = info_output.strip().split("|", 1)
+    date_str = parts[0] if parts else ""
+    message = parts[1] if len(parts) > 1 else ""
 
     files_output = await _run_git_async(
         path,
@@ -317,17 +362,23 @@ async def get_stash_detail(path: Path, stash_name: str) -> StashDetail:
         stash_name,
     )
 
+    branch = message.replace("WIP on ", "").replace("On ", "").split(":")[0].strip()
+
     return StashDetail(
-        name=parts[0],
-        message=parts[1],
-        branch=parts[1].replace("WIP on ", "").split(":")[0],
+        name=stash_name,
+        message=message,
+        branch=branch,
         modified_files=files_output.splitlines(),
-        date=datetime.fromisoformat(parts[3]) if len(parts) > 3 else datetime.now(),
+        date=datetime.fromisoformat(date_str) if date_str else datetime.now(),
     )
 
 
 async def get_commits_ahead(path: Path, branch: str) -> list[CommitInfo]:
     """Get commits ahead of tracking branch"""
+    cache_key = f"{path}:{branch}:ahead"
+    if cached := commit_cache.get(cache_key):
+        return cached
+
     tracking = await _get_tracking_branch(path, branch)
     if not tracking:
         return []
@@ -339,11 +390,17 @@ async def get_commits_ahead(path: Path, branch: str) -> list[CommitInfo]:
         "--format=%h|%s|%an|%ai",
     )
 
-    return _parse_commit_list(output)
+    result = _parse_commit_list(output)
+    commit_cache.set(cache_key, result)
+    return result
 
 
 async def get_commits_behind(path: Path, branch: str) -> list[CommitInfo]:
     """Get commits behind tracking branch"""
+    cache_key = f"{path}:{branch}:behind"
+    if cached := commit_cache.get(cache_key):
+        return cached
+
     tracking = await _get_tracking_branch(path, branch)
     if not tracking:
         return []
@@ -355,7 +412,9 @@ async def get_commits_behind(path: Path, branch: str) -> list[CommitInfo]:
         "--format=%h|%s|%an|%ai",
     )
 
-    return _parse_commit_list(output)
+    result = _parse_commit_list(output)
+    commit_cache.set(cache_key, result)
+    return result
 
 
 def _parse_commit_list(output: str) -> list[CommitInfo]:
@@ -365,12 +424,14 @@ def _parse_commit_list(output: str) -> list[CommitInfo]:
             continue
         parts = line.split("|", 3)
         if len(parts) == 4:
-            commits.append(CommitInfo(
-                sha=parts[0],
-                message=parts[1],
-                author=parts[2],
-                date=datetime.fromisoformat(parts[3]),
-            ))
+            commits.append(
+                CommitInfo(
+                    sha=parts[0],
+                    message=parts[1],
+                    author=parts[2],
+                    date=datetime.fromisoformat(parts[3]),
+                )
+            )
     return commits
 
 

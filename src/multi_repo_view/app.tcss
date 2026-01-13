@@ -15,6 +15,17 @@ Breadcrumbs {
     margin: 1 1 0 1;
 }
 
+/* Filter/Sort Status Bar */
+#filter-sort-status {
+    height: auto;
+    padding: 0 1;
+    margin: 0 1;
+    text-align: center;
+    background: $surface;
+    border: solid $primary;
+    display: none;
+}
+
 /* Main container */
 #main-container {
     height: 1fr;
@@ -70,8 +81,9 @@ Footer .footer--key {
     height: auto;
     max-height: 85%;
     background: $surface;
-    border: thick $primary;
+    border: solid $primary;
     padding: 1 2;
+    align: center middle;
 }
 
 .detail-modal-title {
@@ -104,10 +116,26 @@ LoadingIndicator {
     width: 30;
     height: auto;
     background: $surface;
-    border: thick $accent;
+    border: solid $accent;
     padding: 1 2;
+    align: center middle;
 }
 
 .copy-popup-content {
     text-align: left;
+}
+
+/* Help Modal Styles */
+.help-modal-container {
+    width: 60;
+    height: auto;
+    background: $surface;
+    border: solid $primary;
+    padding: 1 2;
+    align: center middle;
+}
+
+.help-modal-content {
+    text-align: left;
+    padding: 0 1;
 }

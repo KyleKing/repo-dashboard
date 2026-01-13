@@ -277,7 +277,7 @@ class CopyPopup(ModalScreen):
     def action_copy_pr_url(self) -> None:
         if self.pr_url:
             pyperclip.copy(self.pr_url)
-            self.app.notify(f"Copied PR URL")
+            self.app.notify("Copied PR URL")
             self.dismiss()
 
     def action_copy_path(self) -> None:
@@ -285,3 +285,44 @@ class CopyPopup(ModalScreen):
             pyperclip.copy(str(self.repo_path))
             self.app.notify(f"Copied path: {self.repo_path.name}")
             self.dismiss()
+
+
+class HelpModal(ModalScreen):
+    """Display help and keybindings"""
+
+    BINDINGS = [Binding("escape", "dismiss", "Close")]
+
+    def __init__(self, theme_name: str):
+        super().__init__()
+        self.theme_name = theme_name
+
+    def compose(self) -> ComposeResult:
+        from textwrap import dedent
+
+        help_text = dedent("""\
+            [bold]Navigation[/]
+            j/k or ↓/↑    Navigate up/down
+            g/G           Jump to top/bottom
+            space/enter   Select item
+            escape        Go back
+
+            [bold]Actions[/]
+            c             Copy (branch/PR/path)
+            o             Open PR in browser
+            r             Refresh all data
+            f             Cycle filter mode
+            s             Cycle sort mode
+            ?             Help (this screen)
+            q             Quit
+
+            [bold]Filter Modes[/]
+            all → dirty → ahead → behind → has_pr → has_stash
+
+            [bold]Sort Modes[/]
+            name → modified → status → branch
+
+            [bold]Current Theme[/]
+            {self.theme_name}""")
+
+        with Vertical(classes="help-modal-container"):
+            yield Static(help_text, classes="help-modal-content")

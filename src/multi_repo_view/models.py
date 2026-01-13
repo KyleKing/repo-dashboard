@@ -17,6 +17,22 @@ class RepoStatus(StrEnum):
     NO_GH = "no_gh"
 
 
+class FilterMode(StrEnum):
+    ALL = "all"
+    DIRTY = "dirty"
+    AHEAD = "ahead"
+    BEHIND = "behind"
+    HAS_PR = "has_pr"
+    HAS_STASH = "has_stash"
+
+
+class SortMode(StrEnum):
+    NAME = "name"
+    MODIFIED = "modified"
+    STATUS = "status"
+    BRANCH = "branch"
+
+
 @dataclass(frozen=True)
 class RepoSummary:
     path: Path
@@ -111,7 +127,8 @@ class CommitInfo:
 
     @property
     def relative_time(self) -> str:
-        delta = datetime.now() - self.date
+        date_naive = self.date.replace(tzinfo=None) if self.date.tzinfo else self.date
+        delta = datetime.now() - date_naive
         if delta.days > 0:
             return f"{delta.days}d ago"
         hours = delta.seconds // 3600
