@@ -76,6 +76,10 @@ Footer .footer--key {
 }
 
 /* Detail Modal Styles */
+BaseDetailModal {
+    align: center middle;
+}
+
 .detail-modal-container {
     width: 90;
     height: auto;
@@ -83,7 +87,6 @@ Footer .footer--key {
     background: $surface;
     border: solid $primary;
     padding: 1 2;
-    align: center middle;
 }
 
 .detail-modal-title {
@@ -112,13 +115,16 @@ LoadingIndicator {
 }
 
 /* Copy Popup Styles */
+CopyPopup {
+    align: center middle;
+}
+
 .copy-popup-container {
     width: 30;
     height: auto;
     background: $surface;
     border: solid $accent;
     padding: 1 2;
-    align: center middle;
 }
 
 .copy-popup-content {
@@ -126,13 +132,16 @@ LoadingIndicator {
 }
 
 /* Help Modal Styles */
+HelpModal {
+    align: center middle;
+}
+
 .help-modal-container {
     width: 60;
     height: auto;
     background: $surface;
     border: solid $primary;
     padding: 1 2;
-    align: center middle;
 }
 
 .help-modal-content {

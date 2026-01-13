@@ -15,7 +15,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.24.0", "pytest-cov>=6.0.0"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-textual-snapshot>=0.1.0",
+]
 
 [project.scripts]
 multi-repo-view = "multi_repo_view.__main__:main"

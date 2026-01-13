@@ -116,6 +116,10 @@ class BranchDetailModal(BaseDetailModal):
 
         sections = []
 
+        # Branch info section
+        sections.append(f"[bold]Tracking:[/] {detail.branch_info.tracking or '[dim]No remote[/]'}")
+        sections.append("")
+
         # PR section
         if detail.pr_detail:
             sections.append("[bold]Pull Request[/]")
@@ -171,15 +175,22 @@ class StashDetailModal(BaseDetailModal):
 
     async def load_content(self) -> str:
         from multi_repo_view.git_ops import get_stash_detail
+        from multi_repo_view.utils import format_relative_time
 
         detail = await get_stash_detail(self.repo_path, self.stash_name)
+
+        relative_time = format_relative_time(detail.date)
+        full_date = detail.date.strftime("%Y-%m-%d %H:%M:%S")
 
         sections = [
             f"[bold]Message:[/] {detail.message}",
             f"[bold]Branch:[/] {detail.branch}",
-            f"[bold]Created:[/] {detail.date.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"[bold]Created:[/] {relative_time} ({full_date})",
             "",
-            f"[bold]Modified Files ({len(detail.modified_files)}):[/]",
+            f"[bold]Summary:[/]",
+            f"  {len(detail.modified_files)} file(s) modified",
+            "",
+            f"[bold]Modified Files:[/]",
             _format_files(detail.modified_files),
         ]
 
@@ -195,7 +206,10 @@ class WorktreeDetailModal(BaseDetailModal):
         self.worktree_path = Path(worktree_path)
 
     async def load_content(self) -> str:
-        from multi_repo_view.git_ops import get_worktree_list
+        from multi_repo_view.git_ops import (
+            get_status_files_async,
+            get_worktree_list,
+        )
 
         worktrees = await get_worktree_list(self.repo_path)
         worktree = next(
@@ -216,6 +230,29 @@ class WorktreeDetailModal(BaseDetailModal):
             sections.append(
                 "[yellow]Warning:[/] Worktree is in detached HEAD state"
             )
+            sections.append("")
+
+        try:
+            untracked, modified, staged = await get_status_files_async(
+                self.worktree_path
+            )
+
+            total_changes = len(untracked) + len(modified) + len(staged)
+            if total_changes > 0:
+                sections.append("[bold]Working Directory:[/]")
+                if staged:
+                    sections.append(f"[green]Staged ({len(staged)}):[/]")
+                    sections.append(_format_files(staged, "  "))
+                if modified:
+                    sections.append(f"[yellow]Modified ({len(modified)}):[/]")
+                    sections.append(_format_files(modified, "  "))
+                if untracked:
+                    sections.append(f"[red]Untracked ({len(untracked)}):[/]")
+                    sections.append(_format_files(untracked, "  "))
+            else:
+                sections.append("[dim]No uncommitted changes[/]")
+        except Exception:
+            sections.append("[dim]Unable to fetch worktree status[/]")
 
         return "\n".join(sections)
 

@@ -1,5 +1,6 @@
 import asyncio
 import re
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +16,15 @@ from multi_repo_view.models import (
 )
 
 
+def _check_git_installed() -> bool:
+    """Check if git is installed and available"""
+    return shutil.which("git") is not None
+
+
 def _run_git(path: Path, *args: str) -> str:
+    if not _check_git_installed():
+        raise FileNotFoundError("git command not found - please install git")
+
     result = subprocess.run(
         ["git", "-C", str(path), *args],
         capture_output=True,
@@ -25,6 +34,9 @@ def _run_git(path: Path, *args: str) -> str:
 
 
 async def _run_git_async(path: Path, *args: str) -> str:
+    if not _check_git_installed():
+        raise FileNotFoundError("git command not found - please install git")
+
     proc = await asyncio.create_subprocess_exec(
         "git",
         "-C",
@@ -33,7 +45,7 @@ async def _run_git_async(path: Path, *args: str) -> str:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, _ = await proc.communicate()
+    stdout, stderr = await proc.communicate()
     return stdout.decode().strip()
 
 
