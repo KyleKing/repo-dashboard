@@ -6,7 +6,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Vertical
-from textual.widgets import DataTable, Footer, Static
+from textual.widgets import DataTable, Footer, Input, Static
 
 from multi_repo_view.cache import branch_cache, commit_cache, pr_cache
 from multi_repo_view.discovery import discover_git_repos
@@ -107,6 +107,7 @@ class MultiRepoViewApp(App):
         Binding("c", "copy", "Copy"),
         Binding("f", "cycle_filter", "Filter"),
         Binding("s", "cycle_sort", "Sort"),
+        Binding("/", "search", "Search", show=False),
         Binding("?", "help", "Help"),
     ]
 
@@ -127,11 +128,13 @@ class MultiRepoViewApp(App):
         self._breadcrumb_path: list[str] = []
         self._filter_mode: FilterMode = FilterMode.ALL
         self._sort_mode: SortMode = SortMode.NAME
-        self._filter_text: str = ""
+        self._search_mode: bool = False
+        self._search_text: str = ""
 
     def compose(self) -> ComposeResult:
         yield Breadcrumbs([])
         yield Static("", id="filter-sort-status")
+        yield Input(placeholder="Search repos (fuzzy)...", id="search-input")
         with Vertical(id="main-layout"):
             with Container(id="main-container"):
                 yield DataTable(id="main-table", zebra_stripes=False)
@@ -144,6 +147,9 @@ class MultiRepoViewApp(App):
         else:
             self.theme = "textual-dark"
 
+        search_input = self.query_one("#search-input", Input)
+        search_input.disabled = True
+
         self._repo_paths = discover_git_repos(self.scan_paths, self.scan_depth)
 
         if not self._repo_paths:
@@ -152,6 +158,9 @@ class MultiRepoViewApp(App):
 
         self._show_repo_list_table()
         self._start_progressive_load()
+
+        table = self.query_one(DataTable)
+        table.focus()
 
     def _show_repo_list_table(self) -> None:
         """Show repo list table"""
@@ -236,7 +245,7 @@ class MultiRepoViewApp(App):
         if self._current_view != "repo_list":
             return
 
-        filtered = filter_repos(self._summaries, self._filter_mode, self._filter_text)
+        filtered = filter_repos(self._summaries, self._filter_mode, self._search_text)
         sorted_paths = sort_repos(list(filtered.keys()), filtered, self._sort_mode)
 
         table = self.query_one(DataTable)
@@ -306,7 +315,7 @@ class MultiRepoViewApp(App):
             return
 
         total = len(self._repo_paths)
-        filtered = filter_repos(self._summaries, self._filter_mode, self._filter_text)
+        filtered = filter_repos(self._summaries, self._filter_mode, self._search_text)
         visible = len(filtered)
 
         dirty = sum(1 for s in filtered.values() if s.uncommitted_count > 0)
@@ -326,6 +335,11 @@ class MultiRepoViewApp(App):
         if self._sort_mode != SortMode.NAME:
             badges.append(
                 StatusBadge("sort", self._sort_mode.value, "#24273a", "#8bd5ca")
+            )
+
+        if self._search_text:
+            badges.append(
+                StatusBadge("search", f"{self._search_text} ({visible})", "#24273a", "#c6a0f6")
             )
 
         breadcrumbs = self.query_one(Breadcrumbs)
@@ -578,7 +592,11 @@ class MultiRepoViewApp(App):
                 self._show_repo_detail_view(repo_path)
 
     def action_back(self) -> None:
-        """Go back to previous view"""
+        """Go back to previous view or exit search mode"""
+        if self._search_mode:
+            self._exit_search_mode(keep_text=False)
+            return
+
         if self._current_view == "repo_detail":
             self._current_view = "repo_list"
             self._selected_repo = None
@@ -597,6 +615,8 @@ class MultiRepoViewApp(App):
         self._summaries.clear()
         self._filter_mode = FilterMode.ALL
         self._sort_mode = SortMode.NAME
+        self._search_text = ""
+        self._search_mode = False
 
         if self._current_view == "repo_list":
             self._show_repo_list_table()
@@ -682,3 +702,47 @@ class MultiRepoViewApp(App):
     def action_help(self) -> None:
         """Show help modal"""
         self.push_screen(HelpModal(self.theme_name))
+
+    def action_search(self) -> None:
+        """Enter search mode"""
+        if self._current_view != "repo_list":
+            return
+
+        self._search_mode = True
+        self._search_text = ""
+        search_input = self.query_one("#search-input", Input)
+        search_input.value = ""
+        search_input.disabled = False
+        search_input.styles.display = "block"
+        search_input.focus()
+
+    @on(Input.Changed, "#search-input")
+    def on_search_changed(self, event: Input.Changed) -> None:
+        """Update search text and refresh table"""
+        if not self._search_mode:
+            return
+
+        self._search_text = event.value
+        self._refresh_table_with_filters()
+        self._update_status_badges()
+
+    @on(Input.Submitted, "#search-input")
+    def on_search_submitted(self, event: Input.Submitted) -> None:
+        """Accept search and return focus to table"""
+        self._exit_search_mode(keep_text=True)
+
+    def _exit_search_mode(self, keep_text: bool = False) -> None:
+        """Exit search mode and optionally clear search text"""
+        if not keep_text:
+            self._search_text = ""
+            self._refresh_table_with_filters()
+
+        self._search_mode = False
+        search_input = self.query_one("#search-input", Input)
+        search_input.disabled = True
+        search_input.styles.display = "none"
+
+        table = self.query_one(DataTable)
+        table.focus()
+
+        self._update_status_badges()

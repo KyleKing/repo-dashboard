@@ -35,6 +35,28 @@ Breadcrumbs {
     display: none;
 }
 
+/* Search Input */
+#search-input {
+    height: 1;
+    padding: 0 1;
+    margin: 0 1;
+    background: #24273a;
+    border: solid #c6a0f6;
+    display: none;
+}
+
+#search-input:focus {
+    border: solid #c6a0f6;
+}
+
+#search-input > .input--placeholder {
+    color: #6e738d;
+}
+
+#search-input > .input--cursor {
+    background: #c6a0f6;
+}
+
 /* Main layout wrapper */
 #main-layout {
     height: 1fr;

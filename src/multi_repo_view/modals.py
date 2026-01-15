@@ -590,6 +590,7 @@ class HelpModal(ModalScreen):
             g/G           Jump to top/bottom
             space/enter   Select item
             escape        Go back
+            /             Search repos (fuzzy)
 
             [bold]Actions[/]
             c             Copy (branch/PR/path)
@@ -605,6 +606,11 @@ class HelpModal(ModalScreen):
 
             [bold]Sort Modes[/]
             name → modified → status → branch
+
+            [bold]Search[/]
+            Press / to fuzzy search repository names
+            Works with filters for combined filtering
+            Press Enter to keep search, Escape to clear
 
             [bold]Current Theme[/]
             {self.theme_name}""")

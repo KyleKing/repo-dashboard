@@ -254,3 +254,43 @@ def test_fuzzy_match_empty_search() -> None:
 def test_fuzzy_match_threshold() -> None:
     result = _fuzzy_match_name("similar", "somilar", threshold=0.7)
     assert result
+
+
+def test_filter_repos_with_search_text() -> None:
+    """Test fuzzy search filtering"""
+    summaries = {
+        Path("/tmp/api-service"): _make_summary("api-service"),
+        Path("/tmp/web-frontend"): _make_summary("web-frontend"),
+        Path("/tmp/api-gateway"): _make_summary("api-gateway"),
+    }
+    result = filter_repos(summaries, FilterMode.ALL, "api")
+    assert len(result) == 2
+    assert Path("/tmp/api-service") in result
+    assert Path("/tmp/api-gateway") in result
+    assert Path("/tmp/web-frontend") not in result
+
+
+def test_filter_repos_combined_filter_and_search() -> None:
+    """Test filter mode + search work together"""
+    summaries = {
+        Path("/tmp/api-service"): _make_summary("api-service", uncommitted=1),
+        Path("/tmp/web-frontend"): _make_summary("web-frontend", uncommitted=2),
+        Path("/tmp/api-gateway"): _make_summary("api-gateway"),
+    }
+    result = filter_repos(summaries, FilterMode.DIRTY, "api")
+    assert len(result) == 1
+    assert Path("/tmp/api-service") in result
+    assert Path("/tmp/web-frontend") not in result
+    assert Path("/tmp/api-gateway") not in result
+
+
+def test_filter_repos_empty_search() -> None:
+    """Empty search shows all filtered repos"""
+    summaries = {
+        Path("/tmp/api"): _make_summary("api", uncommitted=1),
+        Path("/tmp/web"): _make_summary("web", uncommitted=2),
+    }
+    result = filter_repos(summaries, FilterMode.DIRTY, "")
+    assert len(result) == 2
+    assert Path("/tmp/api") in result
+    assert Path("/tmp/web") in result

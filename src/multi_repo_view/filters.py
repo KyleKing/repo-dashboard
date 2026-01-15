@@ -9,19 +9,30 @@ def filter_repos(
     mode: FilterMode,
     search_text: str = "",
 ) -> dict[Path, RepoSummary]:
-    if mode == FilterMode.ALL:
-        return summaries
-    if mode == FilterMode.DIRTY:
-        return _filter_dirty(summaries)
-    if mode == FilterMode.AHEAD:
-        return _filter_ahead(summaries)
-    if mode == FilterMode.BEHIND:
-        return _filter_behind(summaries)
-    if mode == FilterMode.HAS_PR:
-        return _filter_has_pr(summaries)
-    if mode == FilterMode.HAS_STASH:
-        return _filter_has_stash(summaries)
-    return summaries
+    match mode:
+        case FilterMode.ALL:
+            filtered = summaries
+        case FilterMode.DIRTY:
+            filtered = _filter_dirty(summaries)
+        case FilterMode.AHEAD:
+            filtered = _filter_ahead(summaries)
+        case FilterMode.BEHIND:
+            filtered = _filter_behind(summaries)
+        case FilterMode.HAS_PR:
+            filtered = _filter_has_pr(summaries)
+        case FilterMode.HAS_STASH:
+            filtered = _filter_has_stash(summaries)
+        case _:
+            filtered = summaries
+
+    if search_text:
+        filtered = {
+            path: summary
+            for path, summary in filtered.items()
+            if _fuzzy_match_name(summary.name, search_text)
+        }
+
+    return filtered
 
 
 def _filter_dirty(summaries: dict[Path, RepoSummary]) -> dict[Path, RepoSummary]:
@@ -74,15 +85,17 @@ def sort_repos(
     summaries: dict[Path, RepoSummary],
     mode: SortMode,
 ) -> list[Path]:
-    if mode == SortMode.NAME:
-        return _sort_by_name(paths, summaries)
-    if mode == SortMode.MODIFIED:
-        return _sort_by_modified(paths, summaries)
-    if mode == SortMode.STATUS:
-        return _sort_by_status(paths, summaries)
-    if mode == SortMode.BRANCH:
-        return _sort_by_branch(paths, summaries)
-    return paths
+    match mode:
+        case SortMode.NAME:
+            return _sort_by_name(paths, summaries)
+        case SortMode.MODIFIED:
+            return _sort_by_modified(paths, summaries)
+        case SortMode.STATUS:
+            return _sort_by_status(paths, summaries)
+        case SortMode.BRANCH:
+            return _sort_by_branch(paths, summaries)
+        case _:
+            return paths
 
 
 def _sort_by_name(paths: list[Path], summaries: dict[Path, RepoSummary]) -> list[Path]:
