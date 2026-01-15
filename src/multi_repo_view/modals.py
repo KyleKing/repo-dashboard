@@ -7,7 +7,7 @@ from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import LoadingIndicator, Static
 
-from multi_repo_view.models import CommitInfo, PRDetail
+from multi_repo_view.models import ActiveFilter, CommitInfo, FilterMode, PRDetail, SortMode
 
 
 def _format_commits(commits: list[CommitInfo], max_display: int = 10) -> str:
@@ -324,6 +324,156 @@ class CopyPopup(ModalScreen):
             self.dismiss()
 
 
+class FilterPopup(ModalScreen):
+    """Popup for selecting filters with chord-based input"""
+
+    BINDINGS = [
+        Binding("a", "toggle_ahead", "Ahead", show=False),
+        Binding("b", "toggle_behind", "Behind", show=False),
+        Binding("c", "clear_all", "Clear", show=False),
+        Binding("d", "toggle_dirty", "Dirty", show=False),
+        Binding("escape", "dismiss", "Close", show=False),
+        Binding("n", "start_not", "Not", show=False),
+        Binding("p", "toggle_pr", "PR", show=False),
+        Binding("s", "toggle_stash", "Stash", show=False),
+    ]
+
+    def __init__(self, active_filters: list[ActiveFilter]):
+        super().__init__()
+        self._active_filters = list(active_filters)
+        self._not_mode = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="filter-popup-container"):
+            yield Static("", id="filter-popup-content", classes="filter-popup-content")
+
+    def on_mount(self) -> None:
+        self._update_display()
+
+    def _update_display(self) -> None:
+        lines = ["[bold]Filter:[/] (multiple allowed, AND logic)", ""]
+
+        not_prefix = "[#c6a0f6]NOT [/]" if self._not_mode else ""
+        lines.append(f"{not_prefix}[a] Ahead    [b] Behind    [d] Dirty")
+        lines.append(f"{not_prefix}[p] Has PR   [s] Has Stash")
+        lines.append("")
+        lines.append("[n] Not...  [c] Clear all  [Esc] Close")
+
+        if self._active_filters:
+            active_str = ", ".join(f.display_name for f in self._active_filters)
+            lines.append("")
+            lines.append(f"[#8aadf4]Active: {active_str}[/]")
+
+        content = self.query_one("#filter-popup-content", Static)
+        content.update("\n".join(lines))
+
+    def _toggle_filter(self, mode: FilterMode) -> None:
+        new_filter = ActiveFilter(mode=mode, inverted=self._not_mode)
+        existing = next(
+            (i for i, f in enumerate(self._active_filters) if f.mode == mode),
+            None,
+        )
+        if existing is not None:
+            if self._active_filters[existing].inverted == self._not_mode:
+                self._active_filters.pop(existing)
+            else:
+                self._active_filters[existing] = new_filter
+        else:
+            self._active_filters.append(new_filter)
+
+        self._not_mode = False
+        self._update_display()
+        self.dismiss(self._active_filters)
+
+    def action_start_not(self) -> None:
+        self._not_mode = not self._not_mode
+        self._update_display()
+
+    def action_toggle_ahead(self) -> None:
+        self._toggle_filter(FilterMode.AHEAD)
+
+    def action_toggle_behind(self) -> None:
+        self._toggle_filter(FilterMode.BEHIND)
+
+    def action_toggle_dirty(self) -> None:
+        self._toggle_filter(FilterMode.DIRTY)
+
+    def action_toggle_pr(self) -> None:
+        self._toggle_filter(FilterMode.HAS_PR)
+
+    def action_toggle_stash(self) -> None:
+        self._toggle_filter(FilterMode.HAS_STASH)
+
+    def action_clear_all(self) -> None:
+        self._active_filters = []
+        self.dismiss(self._active_filters)
+
+
+class SortPopup(ModalScreen):
+    """Popup for selecting sort mode"""
+
+    BINDINGS = [
+        Binding("b", "sort_branch", "Branch", show=False),
+        Binding("B", "sort_branch_rev", "Branch Rev", show=False),
+        Binding("escape", "dismiss", "Close", show=False),
+        Binding("m", "sort_modified", "Modified", show=False),
+        Binding("M", "sort_modified_rev", "Modified Rev", show=False),
+        Binding("n", "sort_name", "Name", show=False),
+        Binding("N", "sort_name_rev", "Name Rev", show=False),
+        Binding("s", "sort_status", "Status", show=False),
+        Binding("S", "sort_status_rev", "Status Rev", show=False),
+    ]
+
+    def __init__(self, current_mode: SortMode, current_reverse: bool):
+        super().__init__()
+        self._mode = current_mode
+        self._reverse = current_reverse
+
+    def compose(self) -> ComposeResult:
+        lines = [
+            "[bold]Sort by:[/] (lowercase=asc, UPPERCASE=desc)",
+            "",
+            "[b/B] Branch     [m/M] Modified",
+            "[n/N] Name       [s/S] Status",
+            "",
+            "[Esc] Close",
+            "",
+        ]
+
+        direction = "desc" if self._reverse else "asc"
+        lines.append(f"[#8aadf4]Active: {self._mode.value} ({direction})[/]")
+
+        with Vertical(classes="sort-popup-container"):
+            yield Static("\n".join(lines), classes="sort-popup-content")
+
+    def _select_sort(self, mode: SortMode, reverse: bool) -> None:
+        self.dismiss((mode, reverse))
+
+    def action_sort_branch(self) -> None:
+        self._select_sort(SortMode.BRANCH, False)
+
+    def action_sort_branch_rev(self) -> None:
+        self._select_sort(SortMode.BRANCH, True)
+
+    def action_sort_modified(self) -> None:
+        self._select_sort(SortMode.MODIFIED, False)
+
+    def action_sort_modified_rev(self) -> None:
+        self._select_sort(SortMode.MODIFIED, True)
+
+    def action_sort_name(self) -> None:
+        self._select_sort(SortMode.NAME, False)
+
+    def action_sort_name_rev(self) -> None:
+        self._select_sort(SortMode.NAME, True)
+
+    def action_sort_status(self) -> None:
+        self._select_sort(SortMode.STATUS, False)
+
+    def action_sort_status_rev(self) -> None:
+        self._select_sort(SortMode.STATUS, True)
+
+
 def _detail_row(label: str, value: str) -> Horizontal:
     return Horizontal(
         Static(f"{label}:", classes="detail-label"),
@@ -588,29 +738,28 @@ class HelpModal(ModalScreen):
             [bold]Navigation[/]
             j/k or ↓/↑    Navigate up/down
             g/G           Jump to top/bottom
+            Ctrl+D/U      Half-page down/up
             space/enter   Select item
-            escape        Go back
+            escape        Clear filters/search or go back
             /             Search repos (fuzzy)
 
             [bold]Actions[/]
             c             Copy (branch/PR/path)
             o             Open PR in browser
             r             Refresh all data
-            f             Cycle filter mode
-            s             Cycle sort mode
+            f             Filter popup (multiple, AND logic)
+            s             Sort popup
             ?             Help (this screen)
             q             Quit
 
-            [bold]Filter Modes[/]
-            all → dirty → ahead → behind → has_pr → has_stash
+            [bold]Filter Popup (f)[/]
+            d/a/b/p/s     Toggle dirty/ahead/behind/pr/stash
+            n + key       Invert filter (e.g., n d = not dirty)
+            c             Clear all filters
 
-            [bold]Sort Modes[/]
-            name → modified → status → branch
-
-            [bold]Search[/]
-            Press / to fuzzy search repository names
-            Works with filters for combined filtering
-            Press Enter to keep search, Escape to clear
+            [bold]Sort Popup (s)[/]
+            n/m/s/b       Sort by name/modified/status/branch
+            N/M/S/B       Reverse sort (uppercase)
 
             [bold]Current Theme[/]
             {self.theme_name}""")

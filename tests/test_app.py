@@ -7,6 +7,7 @@ from textual.widgets import DataTable
 
 from multi_repo_view.app import MultiRepoViewApp
 from multi_repo_view.models import (
+    ActiveFilter,
     BranchInfo,
     FilterMode,
     PRInfo,
@@ -108,7 +109,7 @@ async def test_datatable_has_correct_columns(tmp_repos: list[Path]) -> None:
 
 
 @pytest.mark.asyncio
-async def test_cycle_filter_changes_mode(tmp_repos: list[Path]) -> None:
+async def test_filter_popup_adds_filter(tmp_repos: list[Path]) -> None:
     app = MultiRepoViewApp(
         scan_paths=[tmp_repos[0].parent],
         scan_depth=1,
@@ -117,15 +118,15 @@ async def test_cycle_filter_changes_mode(tmp_repos: list[Path]) -> None:
 
     async with app.run_test() as pilot:
         await pilot.pause()
-        assert app._filter_mode == FilterMode.ALL
+        assert app._active_filters == []
         await pilot.press("f")
-        assert app._filter_mode == FilterMode.DIRTY
-        await pilot.press("f")
-        assert app._filter_mode == FilterMode.AHEAD
+        await pilot.press("d")
+        assert len(app._active_filters) == 1
+        assert app._active_filters[0].mode == FilterMode.DIRTY
 
 
 @pytest.mark.asyncio
-async def test_cycle_sort_changes_mode(tmp_repos: list[Path]) -> None:
+async def test_sort_popup_changes_mode(tmp_repos: list[Path]) -> None:
     app = MultiRepoViewApp(
         scan_paths=[tmp_repos[0].parent],
         scan_depth=1,
@@ -135,10 +136,10 @@ async def test_cycle_sort_changes_mode(tmp_repos: list[Path]) -> None:
     async with app.run_test() as pilot:
         await pilot.pause()
         assert app._sort_mode == SortMode.NAME
+        assert app._sort_reverse is False
         await pilot.press("s")
+        await pilot.press("m")
         assert app._sort_mode == SortMode.MODIFIED
-        await pilot.press("s")
-        assert app._sort_mode == SortMode.STATUS
 
 
 @pytest.mark.asyncio
@@ -152,12 +153,14 @@ async def test_refresh_resets_filter_and_sort(tmp_repos: list[Path]) -> None:
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("f")
+        await pilot.press("d")
         await pilot.press("s")
-        assert app._filter_mode != FilterMode.ALL
+        await pilot.press("m")
+        assert len(app._active_filters) > 0
         assert app._sort_mode != SortMode.NAME
         await pilot.press("r")
         await pilot.pause()
-        assert app._filter_mode == FilterMode.ALL
+        assert app._active_filters == []
         assert app._sort_mode == SortMode.NAME
 
 

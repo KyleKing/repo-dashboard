@@ -1,7 +1,7 @@
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from multi_repo_view.models import FilterMode, RepoSummary, SortMode
+from multi_repo_view.models import ActiveFilter, FilterMode, RepoSummary, SortMode
 
 
 def filter_repos(
@@ -33,6 +33,54 @@ def filter_repos(
         }
 
     return filtered
+
+
+def filter_repos_multi(
+    summaries: dict[Path, RepoSummary],
+    active_filters: list[ActiveFilter],
+    search_text: str = "",
+) -> dict[Path, RepoSummary]:
+    if not active_filters:
+        filtered = summaries
+    else:
+        filtered = summaries.copy()
+        for active_filter in active_filters:
+            filtered = _apply_single_filter(filtered, active_filter)
+
+    if search_text:
+        filtered = {
+            path: summary
+            for path, summary in filtered.items()
+            if _fuzzy_match_name(summary.name, search_text)
+        }
+
+    return filtered
+
+
+def _apply_single_filter(
+    summaries: dict[Path, RepoSummary],
+    active_filter: ActiveFilter,
+) -> dict[Path, RepoSummary]:
+    predicate = _get_filter_predicate(active_filter.mode)
+    if active_filter.inverted:
+        return {p: s for p, s in summaries.items() if not predicate(s)}
+    return {p: s for p, s in summaries.items() if predicate(s)}
+
+
+def _get_filter_predicate(mode: FilterMode):
+    match mode:
+        case FilterMode.DIRTY:
+            return lambda s: s.ahead_count > 0 or s.uncommitted_count > 0
+        case FilterMode.AHEAD:
+            return lambda s: s.ahead_count > 0
+        case FilterMode.BEHIND:
+            return lambda s: s.behind_count > 0
+        case FilterMode.HAS_PR:
+            return lambda s: s.pr_info is not None
+        case FilterMode.HAS_STASH:
+            return lambda s: s.stash_count > 0
+        case _:
+            return lambda _: True
 
 
 def _filter_dirty(summaries: dict[Path, RepoSummary]) -> dict[Path, RepoSummary]:

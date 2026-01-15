@@ -21,9 +21,12 @@ from multi_repo_view.github_ops import get_pr_for_branch_async
 from multi_repo_view.modals import (
     CopyPopup,
     DetailPanel,
+    FilterPopup,
     HelpModal,
+    SortPopup,
 )
 from multi_repo_view.models import (
+    ActiveFilter,
     BranchInfo,
     FilterMode,
     RepoStatus,
@@ -101,12 +104,14 @@ class MultiRepoViewApp(App):
         Binding("k", "cursor_up", "Up", show=False),
         Binding("g", "jump_top", "Top", show=False),
         Binding("G", "jump_bottom", "Bottom", show=False),
+        Binding("ctrl+d", "page_down", "Page Down", show=False),
+        Binding("ctrl+u", "page_up", "Page Up", show=False),
         Binding("space", "select", "Select", show=False),
         Binding("enter", "select", "Select", show=False),
         Binding("escape", "back", "Back", show=False),
         Binding("c", "copy", "Copy"),
-        Binding("f", "cycle_filter", "Filter"),
-        Binding("s", "cycle_sort", "Sort"),
+        Binding("f", "show_filter_popup", "Filter"),
+        Binding("s", "show_sort_popup", "Sort"),
         Binding("/", "search", "Search", show=False),
         Binding("?", "help", "Help"),
     ]
@@ -126,8 +131,9 @@ class MultiRepoViewApp(App):
         self._current_view = "repo_list"
         self._selected_repo: Path | None = None
         self._breadcrumb_path: list[str] = []
-        self._filter_mode: FilterMode = FilterMode.ALL
+        self._active_filters: list[ActiveFilter] = []
         self._sort_mode: SortMode = SortMode.NAME
+        self._sort_reverse: bool = False
         self._search_mode: bool = False
         self._search_text: str = ""
 
@@ -240,22 +246,25 @@ class MultiRepoViewApp(App):
         self._update_repo_table_row(path, summary)
 
     def _refresh_table_with_filters(self) -> None:
-        from multi_repo_view.filters import filter_repos, sort_repos
+        from multi_repo_view.filters import filter_repos_multi, sort_repos
 
         if self._current_view != "repo_list":
             return
 
-        filtered = filter_repos(self._summaries, self._filter_mode, self._search_text)
+        filtered = filter_repos_multi(self._summaries, self._active_filters, self._search_text)
         sorted_paths = sort_repos(list(filtered.keys()), filtered, self._sort_mode)
+        if self._sort_reverse:
+            sorted_paths = list(reversed(sorted_paths))
 
         table = self.query_one(DataTable)
         table.clear(columns=True)
 
+        arrow = "↑" if self._sort_reverse else "↓"
         sort_indicators = {
-            SortMode.NAME: ("↓", "", "", "", ""),
-            SortMode.MODIFIED: ("", "", "", "", "↓"),
-            SortMode.STATUS: ("", "", "↓", "", ""),
-            SortMode.BRANCH: ("", "↓", "", "", ""),
+            SortMode.NAME: (arrow, "", "", "", ""),
+            SortMode.MODIFIED: ("", "", "", "", arrow),
+            SortMode.STATUS: ("", "", arrow, "", ""),
+            SortMode.BRANCH: ("", arrow, "", "", ""),
         }
         indicators = sort_indicators.get(self._sort_mode, ("", "", "", "", ""))
 
@@ -290,15 +299,16 @@ class MultiRepoViewApp(App):
         self._update_status_badges()
 
     def _update_filter_sort_status(self) -> None:
-        """Update prominent filter/sort status indicator"""
         status_widget = self.query_one("#filter-sort-status", Static)
 
         parts = []
-        if self._filter_mode != FilterMode.ALL:
-            parts.append(f"[bold yellow]FILTER:[/bold yellow] {self._filter_mode.value}")
+        if self._active_filters:
+            filter_names = ", ".join(f.display_name for f in self._active_filters)
+            parts.append(f"[bold yellow]FILTER:[/bold yellow] {filter_names}")
 
-        if self._sort_mode != SortMode.NAME:
-            parts.append(f"[bold cyan]SORT:[/bold cyan] {self._sort_mode.value}")
+        if self._sort_mode != SortMode.NAME or self._sort_reverse:
+            direction = " (rev)" if self._sort_reverse else ""
+            parts.append(f"[bold cyan]SORT:[/bold cyan] {self._sort_mode.value}{direction}")
 
         if parts:
             status_widget.update("  ".join(parts))
@@ -308,14 +318,13 @@ class MultiRepoViewApp(App):
             status_widget.styles.display = "none"
 
     def _update_status_badges(self) -> None:
-        """Update status badges in breadcrumb bar"""
-        from multi_repo_view.filters import filter_repos
+        from multi_repo_view.filters import filter_repos_multi
 
         if self._current_view != "repo_list":
             return
 
         total = len(self._repo_paths)
-        filtered = filter_repos(self._summaries, self._filter_mode, self._search_text)
+        filtered = filter_repos_multi(self._summaries, self._active_filters, self._search_text)
         visible = len(filtered)
 
         dirty = sum(1 for s in filtered.values() if s.uncommitted_count > 0)
@@ -327,14 +336,18 @@ class MultiRepoViewApp(App):
             StatusBadge("PRs", str(with_pr), "#24273a", "#a6da95"),
         ]
 
-        if self._filter_mode != FilterMode.ALL:
+        if self._active_filters:
+            filter_keys = "".join(f.short_key for f in self._active_filters)
             badges.append(
-                StatusBadge("filter", self._filter_mode.value, "#24273a", "#eed49f")
+                StatusBadge("filter", filter_keys, "#24273a", "#eed49f")
             )
 
-        if self._sort_mode != SortMode.NAME:
+        if self._sort_mode != SortMode.NAME or self._sort_reverse:
+            sort_display = self._sort_mode.value[:3]
+            if self._sort_reverse:
+                sort_display += "!"
             badges.append(
-                StatusBadge("sort", self._sort_mode.value, "#24273a", "#8bd5ca")
+                StatusBadge("sort", sort_display, "#24273a", "#8bd5ca")
             )
 
         if self._search_text:
@@ -568,10 +581,27 @@ class MultiRepoViewApp(App):
             table.move_cursor(row=0)
 
     def action_jump_bottom(self) -> None:
-        """Jump to bottom"""
         table = self.query_one(DataTable)
         if table.row_count > 0:
             table.move_cursor(row=table.row_count - 1)
+
+    def action_page_down(self) -> None:
+        table = self.query_one(DataTable)
+        if table.row_count == 0:
+            return
+        half_page = max(1, table.size.height // 2)
+        current = table.cursor_row if table.cursor_row is not None else 0
+        new_row = min(current + half_page, table.row_count - 1)
+        table.move_cursor(row=new_row)
+
+    def action_page_up(self) -> None:
+        table = self.query_one(DataTable)
+        if table.row_count == 0:
+            return
+        half_page = max(1, table.size.height // 2)
+        current = table.cursor_row if table.cursor_row is not None else 0
+        new_row = max(current - half_page, 0)
+        table.move_cursor(row=new_row)
 
     def action_select(self) -> None:
         """Select current row"""
@@ -592,10 +622,18 @@ class MultiRepoViewApp(App):
                 self._show_repo_detail_view(repo_path)
 
     def action_back(self) -> None:
-        """Go back to previous view or exit search mode"""
         if self._search_mode:
             self._exit_search_mode(keep_text=False)
             return
+
+        if self._current_view == "repo_list":
+            if self._active_filters or self._search_text:
+                self._active_filters = []
+                self._search_text = ""
+                self._refresh_table_with_filters()
+                self._update_status_badges()
+                self._update_filter_sort_status()
+                return
 
         if self._current_view == "repo_detail":
             self._current_view = "repo_list"
@@ -608,13 +646,13 @@ class MultiRepoViewApp(App):
             self._update_filter_sort_status()
 
     def action_refresh(self) -> None:
-        """Refresh all data"""
         pr_cache.clear()
         branch_cache.clear()
         commit_cache.clear()
         self._summaries.clear()
-        self._filter_mode = FilterMode.ALL
+        self._active_filters = []
         self._sort_mode = SortMode.NAME
+        self._sort_reverse = False
         self._search_text = ""
         self._search_mode = False
 
@@ -683,21 +721,31 @@ class MultiRepoViewApp(App):
             )
         )
 
-    def action_cycle_filter(self) -> None:
-        modes = list(FilterMode)
-        current_idx = modes.index(self._filter_mode)
-        self._filter_mode = modes[(current_idx + 1) % len(modes)]
-        self._refresh_table_with_filters()
-        self._update_status_badges()
-        self._update_filter_sort_status()
+    def action_show_filter_popup(self) -> None:
+        if self._current_view != "repo_list":
+            return
 
-    def action_cycle_sort(self) -> None:
-        modes = list(SortMode)
-        current_idx = modes.index(self._sort_mode)
-        self._sort_mode = modes[(current_idx + 1) % len(modes)]
-        self._refresh_table_with_filters()
-        self._update_status_badges()
-        self._update_filter_sort_status()
+        def handle_filter_result(result: list[ActiveFilter] | None) -> None:
+            if result is not None:
+                self._active_filters = result
+                self._refresh_table_with_filters()
+                self._update_status_badges()
+                self._update_filter_sort_status()
+
+        self.push_screen(FilterPopup(self._active_filters), handle_filter_result)
+
+    def action_show_sort_popup(self) -> None:
+        if self._current_view != "repo_list":
+            return
+
+        def handle_sort_result(result: tuple[SortMode, bool] | None) -> None:
+            if result is not None:
+                self._sort_mode, self._sort_reverse = result
+                self._refresh_table_with_filters()
+                self._update_status_badges()
+                self._update_filter_sort_status()
+
+        self.push_screen(SortPopup(self._sort_mode, self._sort_reverse), handle_sort_result)
 
     def action_help(self) -> None:
         """Show help modal"""

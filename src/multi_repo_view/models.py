@@ -19,11 +19,38 @@ class RepoStatus(StrEnum):
 
 class FilterMode(StrEnum):
     ALL = "all"
-    DIRTY = "dirty"
     AHEAD = "ahead"
     BEHIND = "behind"
+    DIRTY = "dirty"
     HAS_PR = "has_pr"
     HAS_STASH = "has_stash"
+
+
+@dataclass(frozen=True)
+class ActiveFilter:
+    mode: FilterMode
+    inverted: bool = False
+
+    @property
+    def display_name(self) -> str:
+        name = self.mode.value.replace("_", " ")
+        return f"not {name}" if self.inverted else name
+
+    @property
+    def short_key(self) -> str:
+        match self.mode:
+            case FilterMode.AHEAD:
+                return "a"
+            case FilterMode.BEHIND:
+                return "b"
+            case FilterMode.DIRTY:
+                return "d"
+            case FilterMode.HAS_PR:
+                return "p"
+            case FilterMode.HAS_STASH:
+                return "s"
+            case _:
+                return ""
 
 
 class SortMode(StrEnum):
