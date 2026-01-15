@@ -159,3 +159,106 @@ async def test_refresh_resets_filter_and_sort(tmp_repos: list[Path]) -> None:
         await pilot.pause()
         assert app._filter_mode == FilterMode.ALL
         assert app._sort_mode == SortMode.NAME
+
+
+@pytest.mark.asyncio
+async def test_detail_panel_hidden_initially(tmp_repos: list[Path]) -> None:
+    app = MultiRepoViewApp(
+        scan_paths=[tmp_repos[0].parent],
+        scan_depth=1,
+        theme="dark",
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        from multi_repo_view.modals import DetailPanel
+
+        panel = app.query_one("#detail-panel", DetailPanel)
+        assert panel.display is False
+
+
+@pytest.mark.asyncio
+async def test_detail_panel_shown_in_repo_detail_view(tmp_repos: list[Path]) -> None:
+    from datetime import datetime
+
+    app = MultiRepoViewApp(
+        scan_paths=[tmp_repos[0].parent],
+        scan_depth=1,
+        theme="dark",
+    )
+
+    summary = _make_summary(tmp_repos[0])
+
+    with patch("multi_repo_view.app.get_branch_list_async", new=AsyncMock(return_value=[])):
+        with patch("multi_repo_view.app.get_stash_list", new=AsyncMock(return_value=[])):
+            with patch("multi_repo_view.app.get_worktree_list", new=AsyncMock(return_value=[])):
+                async with app.run_test() as pilot:
+                    await pilot.pause()
+                    app._summaries[tmp_repos[0]] = summary
+                    app._show_repo_detail_view(tmp_repos[0])
+                    await pilot.pause()
+
+                    from multi_repo_view.modals import DetailPanel
+
+                    panel = app.query_one("#detail-panel", DetailPanel)
+                    assert panel.display is True
+
+
+@pytest.mark.asyncio
+async def test_detail_panel_auto_shows_first_item(tmp_repos: list[Path]) -> None:
+    from datetime import datetime
+
+    app = MultiRepoViewApp(
+        scan_paths=[tmp_repos[0].parent],
+        scan_depth=1,
+        theme="dark",
+    )
+
+    summary = _make_summary(tmp_repos[0])
+
+    with patch("multi_repo_view.app.get_branch_list_async", new=AsyncMock(return_value=[_make_branch_info("main", True)])):
+        with patch("multi_repo_view.app.get_stash_list", new=AsyncMock(return_value=[])):
+            with patch("multi_repo_view.app.get_worktree_list", new=AsyncMock(return_value=[])):
+                async with app.run_test() as pilot:
+                    await pilot.pause()
+                    app._summaries[tmp_repos[0]] = summary
+                    app._selected_repo = tmp_repos[0]
+                    app._show_repo_detail_view(tmp_repos[0])
+                    await pilot.pause()
+
+                    from multi_repo_view.modals import DetailPanel
+
+                    panel = app.query_one("#detail-panel", DetailPanel)
+                    title = panel.query_one("#detail-panel-title")
+                    title_text = str(title.render())
+                    assert "Branch: main" in title_text
+
+
+@pytest.mark.asyncio
+async def test_detail_panel_shows_placeholder_when_no_items(tmp_repos: list[Path]) -> None:
+    from datetime import datetime
+
+    app = MultiRepoViewApp(
+        scan_paths=[tmp_repos[0].parent],
+        scan_depth=1,
+        theme="dark",
+    )
+
+    summary = _make_summary(tmp_repos[0])
+
+    with patch("multi_repo_view.app.get_branch_list_async", new=AsyncMock(return_value=[])):
+        with patch("multi_repo_view.app.get_stash_list", new=AsyncMock(return_value=[])):
+            with patch("multi_repo_view.app.get_worktree_list", new=AsyncMock(return_value=[])):
+                async with app.run_test() as pilot:
+                    await pilot.pause()
+                    app._summaries[tmp_repos[0]] = summary
+                    app._selected_repo = tmp_repos[0]
+                    app._show_repo_detail_view(tmp_repos[0])
+                    await pilot.pause()
+
+                    from multi_repo_view.modals import DetailPanel
+
+                    panel = app.query_one("#detail-panel", DetailPanel)
+                    title = panel.query_one("#detail-panel-title")
+                    title_text = str(title.render())
+                    assert "Select an item" in title_text

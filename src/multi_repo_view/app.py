@@ -5,7 +5,7 @@ from pathlib import Path
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container
+from textual.containers import Container, Vertical
 from textual.widgets import DataTable, Footer, Static
 
 from multi_repo_view.cache import branch_cache, commit_cache, pr_cache
@@ -19,11 +19,9 @@ from multi_repo_view.git_ops import (
 )
 from multi_repo_view.github_ops import get_pr_for_branch_async
 from multi_repo_view.modals import (
-    BranchDetailModal,
     CopyPopup,
+    DetailPanel,
     HelpModal,
-    StashDetailModal,
-    WorktreeDetailModal,
 )
 from multi_repo_view.models import (
     BranchInfo,
@@ -66,14 +64,14 @@ class Breadcrumbs(Static):
     def render(self) -> str:
         crumbs = ["repos"] + self.path
         if len(crumbs) == 1:
-            breadcrumb_text = f"[bold white on dodgerblue] {crumbs[0]} [/]"
+            breadcrumb_text = f"[bold #24273a on #8aadf4] {crumbs[0]} [/]"
         else:
             parts = []
             for i, crumb in enumerate(crumbs):
                 if i == len(crumbs) - 1:
-                    parts.append(f"[bold white on dodgerblue] {crumb} [/]")
+                    parts.append(f"[bold #24273a on #8aadf4] {crumb} [/]")
                 else:
-                    parts.append(f"[white on grey30] {crumb} [/]")
+                    parts.append(f"[#cad3f5 on #363a4f] {crumb} [/]")
             breadcrumb_text = " [dim]▸[/] ".join(parts)
 
         if self.badges:
@@ -134,8 +132,10 @@ class MultiRepoViewApp(App):
     def compose(self) -> ComposeResult:
         yield Breadcrumbs([])
         yield Static("", id="filter-sort-status")
-        with Container(id="main-container"):
-            yield DataTable(id="main-table", zebra_stripes=True)
+        with Vertical(id="main-layout"):
+            with Container(id="main-container"):
+                yield DataTable(id="main-table", zebra_stripes=False)
+            yield DetailPanel(id="detail-panel")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -164,7 +164,6 @@ class MultiRepoViewApp(App):
         table.add_column("PR", width=45)
         table.add_column("Modified", width=15)
         table.cursor_type = "row"
-        table.zebra_stripes = True
 
         for repo_path in self._repo_paths:
             table.add_row(
@@ -257,7 +256,6 @@ class MultiRepoViewApp(App):
         table.add_column("PR", width=45)
         table.add_column(f"Modified {indicators[4]}".strip(), width=15)
         table.cursor_type = "row"
-        table.zebra_stripes = True
 
         for repo_path in sorted_paths:
             summary = filtered[repo_path]
@@ -315,19 +313,19 @@ class MultiRepoViewApp(App):
         with_pr = sum(1 for s in filtered.values() if s.pr_info)
 
         badges = [
-            StatusBadge("repos", f"{visible}/{total}", "white", "grey37"),
-            StatusBadge("dirty", str(dirty), "white", "darkorange3"),
-            StatusBadge("PRs", str(with_pr), "white", "green4"),
+            StatusBadge("repos", f"{visible}/{total}", "#cad3f5", "#363a4f"),
+            StatusBadge("dirty", str(dirty), "#24273a", "#f5a97f"),
+            StatusBadge("PRs", str(with_pr), "#24273a", "#a6da95"),
         ]
 
         if self._filter_mode != FilterMode.ALL:
             badges.append(
-                StatusBadge("filter", self._filter_mode.value, "black", "yellow3")
+                StatusBadge("filter", self._filter_mode.value, "#24273a", "#eed49f")
             )
 
         if self._sort_mode != SortMode.NAME:
             badges.append(
-                StatusBadge("sort", self._sort_mode.value, "black", "cyan3")
+                StatusBadge("sort", self._sort_mode.value, "#24273a", "#8bd5ca")
             )
 
         breadcrumbs = self.query_one(Breadcrumbs)
@@ -335,7 +333,7 @@ class MultiRepoViewApp(App):
 
     @on(DataTable.RowSelected)
     def on_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Handle row selection"""
+        """Handle row selection (Enter/Space)"""
         row_key = str(event.row_key.value)
 
         if self._current_view == "repo_list":
@@ -344,16 +342,22 @@ class MultiRepoViewApp(App):
                 self._selected_repo = repo_path
                 self._show_repo_detail_view(repo_path)
 
-        elif self._current_view == "repo_detail":
-            if row_key.startswith("branch:"):
-                branch_name = row_key.split(":", 1)[1]
-                self._show_branch_detail_modal(branch_name)
-            elif row_key.startswith("stash:"):
-                stash_name = row_key.split(":", 1)[1]
-                self._show_stash_detail_modal(stash_name)
-            elif row_key.startswith("worktree:"):
-                worktree_path = row_key.split(":", 1)[1]
-                self._show_worktree_detail_modal(worktree_path)
+    @on(DataTable.RowHighlighted)
+    def on_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """Handle cursor movement in repo detail view"""
+        if self._current_view != "repo_detail":
+            return
+
+        row_key = str(event.row_key.value)
+        if row_key.startswith("branch:"):
+            branch_name = row_key.split(":", 1)[1]
+            self._show_branch_detail(branch_name)
+        elif row_key.startswith("stash:"):
+            stash_name = row_key.split(":", 1)[1]
+            self._show_stash_detail(stash_name)
+        elif row_key.startswith("worktree:"):
+            worktree_path = row_key.split(":", 1)[1]
+            self._show_worktree_detail(worktree_path)
 
     def _show_repo_detail_view(self, repo_path: Path) -> None:
         """Show repo detail view"""
@@ -375,6 +379,10 @@ class MultiRepoViewApp(App):
         table.add_column("Status", width=20)
         table.add_column("Reference", width=50)
 
+        detail_panel = self.query_one("#detail-panel", DetailPanel)
+        detail_panel.display = True
+        detail_panel.clear()
+
         self.notify("Loading repo details...")
         self.run_worker(self._load_repo_details(repo_path), exclusive=True)
 
@@ -388,6 +396,8 @@ class MultiRepoViewApp(App):
             get_worktree_list(repo_path),
         )
 
+        first_row_key = None
+
         for branch in branches:
             ahead_behind = []
             if branch.ahead > 0:
@@ -399,32 +409,41 @@ class MultiRepoViewApp(App):
             marker = "✓" if branch.is_current else ""
             name = f"{marker} {branch.name}".strip()
 
+            row_key = f"branch:{branch.name}"
             table.add_row(
                 "branch",
                 truncate(name, 38),
                 status,
                 "...",
-                key=f"branch:{branch.name}",
+                key=row_key,
             )
+            if first_row_key is None:
+                first_row_key = row_key
 
         for stash in stashes:
+            row_key = f"stash:{stash['name']}"
             table.add_row(
                 "stash",
                 truncate(stash["name"], 38),
                 "—",
                 truncate(stash["message"], 48),
-                key=f"stash:{stash['name']}",
+                key=row_key,
             )
+            if first_row_key is None:
+                first_row_key = row_key
 
         for worktree in worktrees:
             status = "detached" if worktree.is_detached else "—"
+            row_key = f"worktree:{worktree.path}"
             table.add_row(
                 "worktree",
                 truncate(worktree.branch or "HEAD", 38),
                 status,
                 truncate(str(worktree.path.name), 48),
-                key=f"worktree:{worktree.path}",
+                key=row_key,
             )
+            if first_row_key is None:
+                first_row_key = row_key
 
         for branch in branches:
             self.run_worker(
@@ -432,6 +451,21 @@ class MultiRepoViewApp(App):
                 group="branch_prs",
                 exclusive=False,
             )
+
+        if first_row_key and table.row_count > 0:
+            table.move_cursor(row=0)
+            if first_row_key.startswith("branch:"):
+                branch_name = first_row_key.split(":", 1)[1]
+                self._show_branch_detail(branch_name)
+            elif first_row_key.startswith("stash:"):
+                stash_name = first_row_key.split(":", 1)[1]
+                self._show_stash_detail(stash_name)
+            elif first_row_key.startswith("worktree:"):
+                worktree_path = first_row_key.split(":", 1)[1]
+                self._show_worktree_detail(worktree_path)
+        else:
+            detail_panel = self.query_one("#detail-panel", DetailPanel)
+            detail_panel.clear()
 
     async def _load_branch_pr(self, repo_path: Path, branch: BranchInfo) -> None:
         """Load PR info for a branch"""
@@ -460,36 +494,48 @@ class MultiRepoViewApp(App):
         except Exception:
             pass
 
-    def _show_branch_detail_modal(self, branch_name: str) -> None:
-        """Show branch detail modal"""
+    def _show_branch_detail(self, branch_name: str) -> None:
         if not self._selected_repo:
             return
 
-        pr_detail = None
+        detail_panel = self.query_one("#detail-panel", DetailPanel)
+        detail_panel.set_loading(f"Branch: {branch_name}")
 
-        async def get_pr():
-            nonlocal pr_detail
+        async def load_branch() -> None:
             from multi_repo_view.github_ops import get_pr_detail
 
             pr_detail = await get_pr_detail(self._selected_repo, branch_name)
+            detail_panel = self.query_one("#detail-panel", DetailPanel)
+            await detail_panel.show_branch(self._selected_repo, branch_name, pr_detail)
 
-        self.run_worker(get_pr(), exclusive=False)
+        self.run_worker(load_branch(), exclusive=True)
 
-        self.push_screen(
-            BranchDetailModal(self._selected_repo, branch_name, pr_detail)
-        )
-
-    def _show_stash_detail_modal(self, stash_name: str) -> None:
-        """Show stash detail modal"""
+    def _show_stash_detail(self, stash_name: str) -> None:
         if not self._selected_repo:
             return
-        self.push_screen(StashDetailModal(self._selected_repo, stash_name))
 
-    def _show_worktree_detail_modal(self, worktree_path: str) -> None:
-        """Show worktree detail modal"""
+        detail_panel = self.query_one("#detail-panel", DetailPanel)
+        detail_panel.set_loading(f"Stash: {stash_name}")
+
+        async def load_stash() -> None:
+            detail_panel = self.query_one("#detail-panel", DetailPanel)
+            await detail_panel.show_stash(self._selected_repo, stash_name)
+
+        self.run_worker(load_stash(), exclusive=True)
+
+    def _show_worktree_detail(self, worktree_path: str) -> None:
         if not self._selected_repo:
             return
-        self.push_screen(WorktreeDetailModal(self._selected_repo, worktree_path))
+
+        worktree_name = Path(worktree_path).name
+        detail_panel = self.query_one("#detail-panel", DetailPanel)
+        detail_panel.set_loading(f"Worktree: {worktree_name}")
+
+        async def load_worktree() -> None:
+            detail_panel = self.query_one("#detail-panel", DetailPanel)
+            await detail_panel.show_worktree(self._selected_repo, worktree_path)
+
+        self.run_worker(load_worktree(), exclusive=True)
 
     def action_cursor_down(self) -> None:
         """Move cursor down"""
@@ -531,27 +577,17 @@ class MultiRepoViewApp(App):
                 self._selected_repo = repo_path
                 self._show_repo_detail_view(repo_path)
 
-        elif self._current_view == "repo_detail":
-            if row_key.startswith("branch:"):
-                branch_name = row_key.split(":", 1)[1]
-                self._show_branch_detail_modal(branch_name)
-            elif row_key.startswith("stash:"):
-                stash_name = row_key.split(":", 1)[1]
-                self._show_stash_detail_modal(stash_name)
-            elif row_key.startswith("worktree:"):
-                worktree_path = row_key.split(":", 1)[1]
-                self._show_worktree_detail_modal(worktree_path)
-
     def action_back(self) -> None:
         """Go back to previous view"""
         if self._current_view == "repo_detail":
             self._current_view = "repo_list"
             self._selected_repo = None
             self._breadcrumb_path = []
-            self._show_repo_list_table()
+            detail_panel = self.query_one("#detail-panel", DetailPanel)
+            detail_panel.display = False
+            self._refresh_table_with_filters()
             self._update_status_badges()
             self._update_filter_sort_status()
-            self._start_progressive_load()
 
     def action_refresh(self) -> None:
         """Refresh all data"""

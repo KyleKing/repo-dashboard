@@ -1,4 +1,17 @@
+"""Visual regression tests using pytest-textual-snapshot.
+
+These tests capture SVG screenshots of the TUI and compare them against baseline
+snapshots stored in tests/__snapshots__/. Tests fail if the UI renders differently.
+
+To update snapshots after intentional UI changes:
+    uv run pytest tests/test_snapshots.py --snapshot-update
+
+See README.md for full documentation.
+"""
+
 from pathlib import Path
+
+import pytest
 
 from multi_repo_view.app import MultiRepoViewApp
 
@@ -33,3 +46,5 @@ def test_repo_list_view(snap_compare, tmp_path: Path) -> None:
     )
 
     assert snap_compare(app, terminal_size=(80, 24))
+
+

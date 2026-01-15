@@ -3,7 +3,7 @@ from pathlib import Path
 import pyperclip
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import ScrollableContainer, Vertical
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import LoadingIndicator, Static
 
@@ -13,17 +13,17 @@ from multi_repo_view.models import CommitInfo, PRDetail
 def _format_commits(commits: list[CommitInfo], max_display: int = 10) -> str:
     """Format commit list with truncation"""
     if not commits:
-        return "[dim]No commits[/]"
+        return "[#a5adcb]No commits[/]"
 
     lines = []
     for commit in commits[:max_display]:
-        lines.append(f"[cyan]{commit.sha}[/] [dim]{commit.relative_time}[/]")
+        lines.append(f"[#8bd5ca]{commit.sha}[/] [#a5adcb]{commit.relative_time}[/]")
         lines.append(f"  {commit.message}")
-        lines.append(f"  [dim]{commit.author}[/]")
+        lines.append(f"  [#a5adcb]{commit.author}[/]")
         lines.append("")
 
     if len(commits) > max_display:
-        lines.append(f"[dim]... and {len(commits) - max_display} more[/]")
+        lines.append(f"[#a5adcb]... and {len(commits) - max_display} more[/]")
 
     return "\n".join(lines)
 
@@ -31,23 +31,23 @@ def _format_commits(commits: list[CommitInfo], max_display: int = 10) -> str:
 def _format_files(files: list[str], prefix: str = "") -> str:
     """Format file list"""
     if not files:
-        return "[dim]No files[/]"
+        return "[#a5adcb]No files[/]"
     return "\n".join(f"{prefix}{f}" for f in files)
 
 
 def _format_pr_detail(pr: PRDetail) -> str:
     """Format PR with checks and stats"""
     status_map = {
-        "passing": ("✓", "green"),
-        "failing": ("✗", "red"),
-        "pending": ("○", "yellow"),
+        "passing": ("✓", "#a6da95"),
+        "failing": ("✗", "#ed8796"),
+        "pending": ("○", "#eed49f"),
     }
-    icon, color = status_map.get(pr.checks_status or "unknown", ("?", "dim"))
+    icon, color = status_map.get(pr.checks_status or "unknown", ("?", "#a5adcb"))
 
     lines = [
         f"[bold]PR #{pr.number}:[/] {pr.title}",
         f"State: {pr.state}  Checks: [{color}]{icon}[/] {pr.checks_status or 'unknown'}",
-        f"[green]+{pr.additions}[/] [red]-{pr.deletions}[/]  Comments: {pr.unresolved_comments}",
+        f"[#a6da95]+{pr.additions}[/] [#ed8796]-{pr.deletions}[/]  Comments: {pr.unresolved_comments}",
         "",
         pr.description[:300] + "..." if len(pr.description) > 300 else pr.description,
     ]
@@ -72,7 +72,7 @@ class BaseDetailModal(ModalScreen):
             yield Static(self.modal_title, classes="detail-modal-title")
             with ScrollableContainer(classes="detail-modal-content"):
                 yield LoadingIndicator()
-            yield Static("[dim]Esc[/] to close", classes="detail-modal-footer")
+            yield Static("[#a5adcb]Esc[/] to close", classes="detail-modal-footer")
 
     async def on_mount(self) -> None:
         try:
@@ -83,7 +83,7 @@ class BaseDetailModal(ModalScreen):
         except Exception as e:
             container = self.query_one(ScrollableContainer)
             container.query_one(LoadingIndicator).remove()
-            container.mount(Static(f"[red]Error:[/] {str(e)}", markup=True))
+            container.mount(Static(f"[#ed8796]Error:[/] {str(e)}", markup=True))
 
     async def load_content(self) -> str:
         """Override in subclasses"""
@@ -117,7 +117,7 @@ class BranchDetailModal(BaseDetailModal):
         sections = []
 
         # Branch info section
-        sections.append(f"[bold]Tracking:[/] {detail.branch_info.tracking or '[dim]No remote[/]'}")
+        sections.append(f"[bold]Tracking:[/] {detail.branch_info.tracking or '[#a5adcb]No remote[/]'}")
         sections.append("")
 
         # PR section
@@ -153,13 +153,13 @@ class BranchDetailModal(BaseDetailModal):
         if detail.modified_files or detail.staged_files or detail.untracked_files:
             sections.append("[bold]Working Directory:[/]")
             if detail.staged_files:
-                sections.append(f"[green]Staged ({len(detail.staged_files)}):[/]")
+                sections.append(f"[#a6da95]Staged ({len(detail.staged_files)}):[/]")
                 sections.append(_format_files(detail.staged_files, "  "))
             if detail.modified_files:
-                sections.append(f"[yellow]Modified ({len(detail.modified_files)}):[/]")
+                sections.append(f"[#eed49f]Modified ({len(detail.modified_files)}):[/]")
                 sections.append(_format_files(detail.modified_files, "  "))
             if detail.untracked_files:
-                sections.append(f"[red]Untracked ({len(detail.untracked_files)}):[/]")
+                sections.append(f"[#ed8796]Untracked ({len(detail.untracked_files)}):[/]")
                 sections.append(_format_files(detail.untracked_files, "  "))
 
         return "\n".join(sections)
@@ -217,18 +217,18 @@ class WorktreeDetailModal(BaseDetailModal):
         )
 
         if not worktree:
-            return "[red]Worktree not found[/]"
+            return "[#ed8796]Worktree not found[/]"
 
         sections = [
             f"[bold]Path:[/] {worktree.path}",
-            f"[bold]Branch:[/] {worktree.branch or '[red]DETACHED[/]'}",
+            f"[bold]Branch:[/] {worktree.branch or '[#ed8796]DETACHED[/]'}",
             f"[bold]Status:[/] {'🔒 Locked' if worktree.is_locked else '✓ Active'}",
             "",
         ]
 
         if worktree.is_detached:
             sections.append(
-                "[yellow]Warning:[/] Worktree is in detached HEAD state"
+                "[#eed49f]Warning:[/] Worktree is in detached HEAD state"
             )
             sections.append("")
 
@@ -241,18 +241,18 @@ class WorktreeDetailModal(BaseDetailModal):
             if total_changes > 0:
                 sections.append("[bold]Working Directory:[/]")
                 if staged:
-                    sections.append(f"[green]Staged ({len(staged)}):[/]")
+                    sections.append(f"[#a6da95]Staged ({len(staged)}):[/]")
                     sections.append(_format_files(staged, "  "))
                 if modified:
-                    sections.append(f"[yellow]Modified ({len(modified)}):[/]")
+                    sections.append(f"[#eed49f]Modified ({len(modified)}):[/]")
                     sections.append(_format_files(modified, "  "))
                 if untracked:
-                    sections.append(f"[red]Untracked ({len(untracked)}):[/]")
+                    sections.append(f"[#ed8796]Untracked ({len(untracked)}):[/]")
                     sections.append(_format_files(untracked, "  "))
             else:
-                sections.append("[dim]No uncommitted changes[/]")
+                sections.append("[#a5adcb]No uncommitted changes[/]")
         except Exception:
-            sections.append("[dim]Unable to fetch worktree status[/]")
+            sections.append("[#a5adcb]Unable to fetch worktree status[/]")
 
         return "\n".join(sections)
 
@@ -294,7 +294,7 @@ class CopyPopup(ModalScreen):
             lines.append("[p] Repo path")
 
         lines.append("")
-        lines.append("[dim][Esc] Cancel[/]")
+        lines.append("[#a5adcb][Esc] Cancel[/]")
 
         with Vertical(classes="copy-popup-container"):
             yield Static("\n".join(lines), classes="copy-popup-content")
@@ -322,6 +322,254 @@ class CopyPopup(ModalScreen):
             pyperclip.copy(str(self.repo_path))
             self.app.notify(f"Copied path: {self.repo_path.name}")
             self.dismiss()
+
+
+def _detail_row(label: str, value: str) -> Horizontal:
+    return Horizontal(
+        Static(f"{label}:", classes="detail-label"),
+        Static(value, classes="detail-value", markup=True),
+        classes="detail-row",
+    )
+
+
+def _section_header(title: str) -> Static:
+    return Static(f"[bold]{title}[/]", classes="detail-section-header", markup=True)
+
+
+class DetailPanel(ScrollableContainer):
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._repo_path: Path | None = None
+        self._current_item: str | None = None
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            "[#a5adcb]Select an item to view details[/]",
+            id="detail-panel-title",
+            classes="detail-panel-title",
+            markup=True,
+        )
+        yield Vertical(id="detail-panel-content")
+
+    def clear(self) -> None:
+        self._current_item = None
+        title = self.query_one("#detail-panel-title", Static)
+        title.update("[#a5adcb]Select an item to view details[/]")
+        content = self.query_one("#detail-panel-content", Vertical)
+        content.remove_children()
+
+    def set_loading(self, title: str) -> None:
+        title_widget = self.query_one("#detail-panel-title", Static)
+        title_widget.update(f"[bold]{title}[/]")
+        content = self.query_one("#detail-panel-content", Vertical)
+        content.remove_children()
+        content.mount(LoadingIndicator())
+
+    def _set_loading(self, title: str) -> None:
+        self.set_loading(title)
+
+    def _set_content(self, title: str, widgets: list) -> None:
+        title_widget = self.query_one("#detail-panel-title", Static)
+        title_widget.update(f"[bold]{title}[/]")
+        content = self.query_one("#detail-panel-content", Vertical)
+        content.remove_children()
+        for widget in widgets:
+            content.mount(widget)
+
+    def _set_error(self, title: str, message: str) -> None:
+        title_widget = self.query_one("#detail-panel-title", Static)
+        title_widget.update(f"[bold]{title}[/]")
+        content = self.query_one("#detail-panel-content", Vertical)
+        content.remove_children()
+        content.mount(Static(f"[#ed8796]Error:[/] {message}", markup=True))
+
+    async def show_branch(
+        self, repo_path: Path, branch_name: str, pr_detail: PRDetail | None
+    ) -> None:
+        from multi_repo_view.git_ops import get_branch_detail_async
+
+        self._repo_path = repo_path
+        self._current_item = f"branch:{branch_name}"
+        self._set_loading(f"Branch: {branch_name}")
+
+        try:
+            detail = await get_branch_detail_async(repo_path, branch_name, pr_detail)
+            widgets = []
+
+            widgets.append(
+                _detail_row(
+                    "Tracking", detail.branch_info.tracking or "[#a5adcb]No remote[/]"
+                )
+            )
+
+            status_parts = []
+            if detail.branch_info.ahead > 0:
+                status_parts.append(f"[#a6da95]↑{detail.branch_info.ahead} ahead[/]")
+            if detail.branch_info.behind > 0:
+                status_parts.append(f"[#eed49f]↓{detail.branch_info.behind} behind[/]")
+            widgets.append(
+                _detail_row("Status", " ".join(status_parts) or "[#a5adcb]Up to date[/]")
+            )
+
+            if detail.pr_detail:
+                pr = detail.pr_detail
+                widgets.append(_section_header("Pull Request"))
+                widgets.append(_detail_row("PR", f"#{pr.number}: {pr.title}"))
+                status_map = {
+                    "passing": ("[#a6da95]✓ passing[/]"),
+                    "failing": ("[#ed8796]✗ failing[/]"),
+                    "pending": ("[#eed49f]○ pending[/]"),
+                }
+                checks = status_map.get(pr.checks_status or "", f"[#a5adcb]{pr.checks_status or 'unknown'}[/]")
+                widgets.append(_detail_row("State", f"{pr.state}  Checks: {checks}"))
+                widgets.append(
+                    _detail_row(
+                        "Changes",
+                        f"[#a6da95]+{pr.additions}[/] [#ed8796]-{pr.deletions}[/]  Comments: {pr.unresolved_comments}",
+                    )
+                )
+
+            if detail.commits_ahead:
+                widgets.append(
+                    _section_header(f"Commits Ahead ({len(detail.commits_ahead)})")
+                )
+                widgets.append(
+                    Static(_format_commits(detail.commits_ahead, 5), markup=True)
+                )
+
+            if detail.commits_behind:
+                widgets.append(
+                    _section_header(f"Commits Behind ({len(detail.commits_behind)})")
+                )
+                widgets.append(
+                    Static(_format_commits(detail.commits_behind, 5), markup=True)
+                )
+
+            if detail.modified_files or detail.staged_files or detail.untracked_files:
+                widgets.append(_section_header("Working Directory"))
+                if detail.staged_files:
+                    widgets.append(
+                        _detail_row(
+                            f"[#a6da95]Staged ({len(detail.staged_files)})[/]",
+                            _format_files(detail.staged_files[:5]),
+                        )
+                    )
+                if detail.modified_files:
+                    widgets.append(
+                        _detail_row(
+                            f"[#eed49f]Modified ({len(detail.modified_files)})[/]",
+                            _format_files(detail.modified_files[:5]),
+                        )
+                    )
+                if detail.untracked_files:
+                    widgets.append(
+                        _detail_row(
+                            f"[#ed8796]Untracked ({len(detail.untracked_files)})[/]",
+                            _format_files(detail.untracked_files[:5]),
+                        )
+                    )
+
+            self._set_content(f"Branch: {branch_name}", widgets)
+        except Exception as err:
+            self._set_error(f"Branch: {branch_name}", str(err))
+
+    async def show_stash(self, repo_path: Path, stash_name: str) -> None:
+        from multi_repo_view.git_ops import get_stash_detail
+        from multi_repo_view.utils import format_relative_time
+
+        self._repo_path = repo_path
+        self._current_item = f"stash:{stash_name}"
+        self._set_loading(f"Stash: {stash_name}")
+
+        try:
+            detail = await get_stash_detail(repo_path, stash_name)
+            relative_time = format_relative_time(detail.date)
+            full_date = detail.date.strftime("%Y-%m-%d %H:%M:%S")
+
+            widgets = [
+                _detail_row("Message", detail.message),
+                _detail_row("Branch", detail.branch),
+                _detail_row("Created", f"{relative_time} ({full_date})"),
+                _detail_row("Summary", f"{len(detail.modified_files)} file(s) modified"),
+            ]
+
+            if detail.modified_files:
+                widgets.append(_section_header("Modified Files"))
+                widgets.append(Static(_format_files(detail.modified_files), markup=True))
+
+            self._set_content(f"Stash: {stash_name}", widgets)
+        except Exception as err:
+            self._set_error(f"Stash: {stash_name}", str(err))
+
+    async def show_worktree(self, repo_path: Path, worktree_path: str) -> None:
+        from multi_repo_view.git_ops import get_status_files_async, get_worktree_list
+
+        self._repo_path = repo_path
+        self._current_item = f"worktree:{worktree_path}"
+        worktree_path_obj = Path(worktree_path)
+        self._set_loading(f"Worktree: {worktree_path_obj.name}")
+
+        try:
+            worktrees = await get_worktree_list(repo_path)
+            worktree = next(
+                (w for w in worktrees if w.path == worktree_path_obj), None
+            )
+
+            if not worktree:
+                self._set_error(f"Worktree: {worktree_path_obj.name}", "Worktree not found")
+                return
+
+            status_icon = "🔒 Locked" if worktree.is_locked else "✓ Active"
+            widgets = [
+                _detail_row("Path", str(worktree.path)),
+                _detail_row("Branch", worktree.branch or "[#ed8796]DETACHED[/]"),
+                _detail_row("Status", status_icon),
+            ]
+
+            if worktree.is_detached:
+                widgets.append(
+                    Static(
+                        "[#eed49f]Warning: Worktree is in detached HEAD state[/]",
+                        markup=True,
+                    )
+                )
+
+            try:
+                untracked, modified, staged = await get_status_files_async(
+                    worktree_path_obj
+                )
+                total_changes = len(untracked) + len(modified) + len(staged)
+                if total_changes > 0:
+                    widgets.append(_section_header("Working Directory"))
+                    if staged:
+                        widgets.append(
+                            _detail_row(
+                                f"[#a6da95]Staged ({len(staged)})[/]",
+                                _format_files(staged[:5]),
+                            )
+                        )
+                    if modified:
+                        widgets.append(
+                            _detail_row(
+                                f"[#eed49f]Modified ({len(modified)})[/]",
+                                _format_files(modified[:5]),
+                            )
+                        )
+                    if untracked:
+                        widgets.append(
+                            _detail_row(
+                                f"[#ed8796]Untracked ({len(untracked)})[/]",
+                                _format_files(untracked[:5]),
+                            )
+                        )
+                else:
+                    widgets.append(Static("[#a5adcb]No uncommitted changes[/]", markup=True))
+            except Exception:
+                widgets.append(Static("[#a5adcb]Unable to fetch worktree status[/]", markup=True))
+
+            self._set_content(f"Worktree: {worktree_path_obj.name}", widgets)
+        except Exception as err:
+            self._set_error(f"Worktree: {worktree_path_obj.name}", str(err))
 
 
 class HelpModal(ModalScreen):

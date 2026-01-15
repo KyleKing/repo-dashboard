@@ -1,11 +1,19 @@
+/* Catppuccin Macchiato palette */
+/* Base: #24273a, Surface0: #363a4f, Text: #cad3f5, Subtext0: #a5adcb, Blue: #8aadf4 */
+
 /* Global styles */
+Screen {
+    background: #24273a;
+}
+
 * {
-    scrollbar-color: $foreground 50%;
-    scrollbar-color-hover: $primary 80%;
-    scrollbar-color-active: $primary;
-    scrollbar-background: $surface-darken-1;
-    scrollbar-background-hover: $surface-darken-1;
-    scrollbar-background-active: $surface-darken-1;
+    scrollbar-size: 1 1;
+    scrollbar-color: #cad3f5 50%;
+    scrollbar-color-hover: #8aadf4 80%;
+    scrollbar-color-active: #8aadf4;
+    scrollbar-background: #24273a;
+    scrollbar-background-hover: #24273a;
+    scrollbar-background-active: #24273a;
 }
 
 /* Breadcrumb bar */
@@ -13,6 +21,7 @@ Breadcrumbs {
     height: 1;
     padding: 0 1;
     margin: 1 1 0 1;
+    background: #24273a;
 }
 
 /* Filter/Sort Status Bar */
@@ -21,9 +30,15 @@ Breadcrumbs {
     padding: 0 1;
     margin: 0 1;
     text-align: center;
-    background: $surface;
-    border: solid $primary;
+    background: #24273a;
+    border: solid #8aadf4;
     display: none;
+}
+
+/* Main layout wrapper */
+#main-layout {
+    height: 1fr;
+    width: 100%;
 }
 
 /* Main container */
@@ -31,6 +46,60 @@ Breadcrumbs {
     height: 1fr;
     width: 100%;
     padding: 1;
+    background: #24273a;
+    border: none;
+}
+
+#main-container:focus {
+    border: none;
+}
+
+#main-container:focus-within {
+    border: none;
+}
+
+/* Detail Panel - Bottom Half */
+#detail-panel {
+    height: 40%;
+    min-height: 8;
+    border-top: solid #8aadf4;
+    padding: 1 2;
+    background: #24273a;
+    display: none;
+}
+
+.detail-panel-title {
+    text-style: bold;
+    color: #8aadf4;
+    height: 1;
+    padding-bottom: 1;
+}
+
+#detail-panel-content {
+    height: auto;
+}
+
+.detail-row {
+    height: auto;
+    width: 100%;
+}
+
+.detail-label {
+    width: 20;
+    color: #a5adcb;
+    padding-right: 1;
+}
+
+.detail-value {
+    width: 1fr;
+    color: #cad3f5;
+}
+
+.detail-section-header {
+    text-style: bold;
+    color: #8aadf4;
+    padding-top: 1;
+    height: auto;
 }
 
 /* Main data table */
@@ -38,7 +107,11 @@ Breadcrumbs {
     height: 100%;
     width: 100%;
     border: none;
-    background: $background;
+    background: #24273a;
+}
+
+#main-table:focus {
+    border: none;
 }
 
 #main-table:focus-within {
@@ -46,32 +119,41 @@ Breadcrumbs {
 }
 
 #main-table > .datatable--header {
-    background: $surface;
+    background: #24273a;
     text-style: bold;
-    color: $text;
+    color: #cad3f5;
 }
 
 #main-table > .datatable--header-hover {
-    background: $primary 30%;
+    background: #363a4f;
 }
 
 #main-table > .datatable--cursor {
-    background: $primary 40%;
-    color: $text;
+    background: #363a4f;
+    color: #cad3f5;
 }
 
 #main-table > .datatable--hover {
-    background: $primary 20%;
+    background: #363a4f 50%;
+}
+
+/* Even/odd row colors - unified, no zebra */
+#main-table > .datatable--even-row {
+    background: #24273a;
+}
+
+#main-table > .datatable--odd-row {
+    background: #24273a;
 }
 
 /* Footer */
 Footer {
-    background: $panel;
-    color: $text-muted;
+    background: #24273a;
+    color: #a5adcb;
 }
 
 Footer .footer--key {
-    color: $accent;
+    color: #8aadf4;
     text-style: bold;
 }
 
@@ -84,14 +166,14 @@ BaseDetailModal {
     width: 90;
     height: auto;
     max-height: 85%;
-    background: $surface;
-    border: solid $primary;
+    background: #24273a;
+    border: solid #8aadf4;
     padding: 1 2;
 }
 
 .detail-modal-title {
     text-style: bold;
-    color: $primary;
+    color: #8aadf4;
     height: 1;
     padding: 0 0 1 0;
 }
@@ -100,12 +182,13 @@ BaseDetailModal {
     height: 1fr;
     overflow-y: auto;
     padding: 0 1;
+    color: #cad3f5;
 }
 
 .detail-modal-footer {
     height: 1;
     text-align: center;
-    color: $text-muted;
+    color: #a5adcb;
     padding: 1 0 0 0;
 }
 
@@ -122,13 +205,14 @@ CopyPopup {
 .copy-popup-container {
     width: 30;
     height: auto;
-    background: $surface;
-    border: solid $accent;
+    background: #24273a;
+    border: solid #8aadf4;
     padding: 1 2;
 }
 
 .copy-popup-content {
     text-align: left;
+    color: #cad3f5;
 }
 
 /* Help Modal Styles */
@@ -139,12 +223,13 @@ HelpModal {
 .help-modal-container {
     width: 60;
     height: auto;
-    background: $surface;
-    border: solid $primary;
+    background: #24273a;
+    border: solid #8aadf4;
     padding: 1 2;
 }
 
 .help-modal-content {
     text-align: left;
     padding: 0 1;
+    color: #cad3f5;
 }
