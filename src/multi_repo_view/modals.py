@@ -351,13 +351,18 @@ class FilterPopup(ModalScreen):
         self._update_display()
 
     def _update_display(self) -> None:
-        lines = ["[bold]Filter:[/] (multiple allowed, AND logic)", ""]
+        lines = ["[bold]Filter[/] (AND logic)", ""]
 
-        not_prefix = "[#c6a0f6]NOT [/]" if self._not_mode else ""
-        lines.append(f"{not_prefix}[a] Ahead    [b] Behind    [d] Dirty")
-        lines.append(f"{not_prefix}[p] Has PR   [s] Has Stash")
+        not_prefix = "[#c6a0f6]NOT [/]" if self._not_mode else "    "
+        lines.append(f"{not_prefix}\\[a] Ahead")
+        lines.append(f"{not_prefix}\\[b] Behind")
+        lines.append(f"{not_prefix}\\[d] Dirty")
+        lines.append(f"{not_prefix}\\[p] Has PR")
+        lines.append(f"{not_prefix}\\[s] Has Stash")
         lines.append("")
-        lines.append("[n] Not...  [c] Clear all  [Esc] Close")
+        lines.append("\\[n] Not...")
+        lines.append("\\[c] Clear")
+        lines.append("\\[Esc] Close")
 
         if self._active_filters:
             active_str = ", ".join(f.display_name for f in self._active_filters)
@@ -415,6 +420,7 @@ class SortPopup(ModalScreen):
     BINDINGS = [
         Binding("b", "sort_branch", "Branch", show=False),
         Binding("B", "sort_branch_rev", "Branch Rev", show=False),
+        Binding("c", "clear", "Clear", show=False),
         Binding("escape", "dismiss", "Close", show=False),
         Binding("m", "sort_modified", "Modified", show=False),
         Binding("M", "sort_modified_rev", "Modified Rev", show=False),
@@ -431,12 +437,15 @@ class SortPopup(ModalScreen):
 
     def compose(self) -> ComposeResult:
         lines = [
-            "[bold]Sort by:[/] (lowercase=asc, UPPERCASE=desc)",
+            "[bold]Sort[/] (UPPERCASE=reverse)",
             "",
-            "[b/B] Branch     [m/M] Modified",
-            "[n/N] Name       [s/S] Status",
+            "\\[b/B] Branch",
+            "\\[m/M] Modified",
+            "\\[n/N] Name",
+            "\\[s/S] Status",
             "",
-            "[Esc] Close",
+            "\\[c] Clear",
+            "\\[Esc] Close",
             "",
         ]
 
@@ -448,6 +457,9 @@ class SortPopup(ModalScreen):
 
     def _select_sort(self, mode: SortMode, reverse: bool) -> None:
         self.dismiss((mode, reverse))
+
+    def action_clear(self) -> None:
+        self._select_sort(SortMode.NAME, False)
 
     def action_sort_branch(self) -> None:
         self._select_sort(SortMode.BRANCH, False)
@@ -741,7 +753,7 @@ class HelpModal(ModalScreen):
             Ctrl+D/U      Half-page down/up
             space/enter   Select item
             escape        Clear filters/search or go back
-            /             Search repos (fuzzy)
+            /             Search (type query, Enter to confirm, Esc to cancel)
 
             [bold]Actions[/]
             c             Copy (branch/PR/path)
@@ -760,6 +772,7 @@ class HelpModal(ModalScreen):
             [bold]Sort Popup (s)[/]
             n/m/s/b       Sort by name/modified/status/branch
             N/M/S/B       Reverse sort (uppercase)
+            c             Clear (reset to name asc)
 
             [bold]Current Theme[/]
             {self.theme_name}""")

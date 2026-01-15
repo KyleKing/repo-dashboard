@@ -19,10 +19,10 @@ from multi_repo_view.app import MultiRepoViewApp
 
 
 def _init_git_repo(repo_path: Path, branch: str = "main") -> None:
-    """Initialize a git repo with basic config"""
     subprocess.run(["git", "init", "-b", branch], cwd=repo_path, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=repo_path, check=True, capture_output=True)
 
 
 def _create_commit(repo_path: Path, message: str) -> None:
@@ -96,8 +96,10 @@ def test_filter_sort_search_view(snap_compare, tmp_path: Path) -> None:
         await pilot.press("m")
         await pilot.pause(0.2)
         await pilot.press("/")
-        await pilot.pause(0.2)
-        pilot.app.query_one("#search-input").value = "clean"
+        await pilot.pause(0.1)
+        for char in "clean":
+            await pilot.press(char)
+        await pilot.press("enter")
         await pilot.pause(0.5)
 
     assert snap_compare(app, terminal_size=(100, 24), run_before=apply_filter_sort_search)

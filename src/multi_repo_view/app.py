@@ -6,7 +6,8 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Vertical
-from textual.widgets import DataTable, Footer, Input, Static
+from textual.events import Key
+from textual.widgets import DataTable, Footer, Static
 
 from multi_repo_view.cache import branch_cache, commit_cache, pr_cache
 from multi_repo_view.discovery import discover_git_repos
@@ -136,11 +137,13 @@ class MultiRepoViewApp(App):
         self._sort_reverse: bool = False
         self._search_mode: bool = False
         self._search_text: str = ""
+        self._branch_items: list[BranchInfo] = []
+        self._stash_items: list[dict] = []
+        self._worktree_items: list = []
 
     def compose(self) -> ComposeResult:
         yield Breadcrumbs([])
         yield Static("", id="filter-sort-status")
-        yield Input(placeholder="Search repos (fuzzy)...", id="search-input")
         with Vertical(id="main-layout"):
             with Container(id="main-container"):
                 yield DataTable(id="main-table", zebra_stripes=False)
@@ -152,9 +155,6 @@ class MultiRepoViewApp(App):
             self.theme = "textual-light"
         else:
             self.theme = "textual-dark"
-
-        search_input = self.query_one("#search-input", Input)
-        search_input.disabled = True
 
         self._repo_paths = discover_git_repos(self.scan_paths, self.scan_depth)
 
@@ -174,9 +174,9 @@ class MultiRepoViewApp(App):
         table.clear(columns=True)
 
         table.add_column("Name", width=30)
-        table.add_column("Branch", width=25)
+        table.add_column("Branch", width=18)
         table.add_column("Status", width=20)
-        table.add_column("PR", width=45)
+        table.add_column("PR", width=50)
         table.add_column("Modified", width=15)
         table.cursor_type = "row"
 
@@ -269,9 +269,9 @@ class MultiRepoViewApp(App):
         indicators = sort_indicators.get(self._sort_mode, ("", "", "", "", ""))
 
         table.add_column(f"Name {indicators[0]}".strip(), width=30)
-        table.add_column(f"Branch {indicators[1]}".strip(), width=25)
+        table.add_column(f"Branch {indicators[1]}".strip(), width=18)
         table.add_column(f"Status {indicators[2]}".strip(), width=20)
-        table.add_column("PR", width=45)
+        table.add_column("PR", width=50)
         table.add_column(f"Modified {indicators[4]}".strip(), width=15)
         table.cursor_type = "row"
 
@@ -284,11 +284,25 @@ class MultiRepoViewApp(App):
                 else "—"
             )
 
+            if summary.ahead_count > 0 and summary.behind_count > 0:
+                branch_color = "#ed8796"
+            elif summary.ahead_count > 0:
+                branch_color = "#eed49f"
+            elif summary.behind_count > 0:
+                branch_color = "#8aadf4"
+            elif summary.uncommitted_count == 0:
+                branch_color = "#a5adcb"
+            else:
+                branch_color = "#cad3f5"
+
+            branch_text = truncate(summary.current_branch, 16)
+            colored_branch = f"[{branch_color}]{branch_text}[/]"
+
             table.add_row(
                 truncate(summary.name, 28),
-                truncate(summary.current_branch, 23),
+                colored_branch,
                 f"{status_icon}{summary.status_summary}",
-                truncate(pr_text, 43),
+                truncate(pr_text, 48),
                 format_relative_time(summary.last_modified),
                 key=str(repo_path),
             )
@@ -350,9 +364,14 @@ class MultiRepoViewApp(App):
                 StatusBadge("sort", sort_display, "#24273a", "#8bd5ca")
             )
 
-        if self._search_text:
+        if self._search_mode:
+            search_display = f"/{self._search_text}_"
             badges.append(
-                StatusBadge("search", f"{self._search_text} ({visible})", "#24273a", "#c6a0f6")
+                StatusBadge("search", search_display, "#24273a", "#c6a0f6")
+            )
+        elif self._search_text:
+            badges.append(
+                StatusBadge("search", f"/{self._search_text} ({visible})", "#24273a", "#c6a0f6")
             )
 
         breadcrumbs = self.query_one(Breadcrumbs)
@@ -415,17 +434,40 @@ class MultiRepoViewApp(App):
 
     async def _load_repo_details(self, repo_path: Path) -> None:
         """Load all branches, stashes, and worktrees for repo"""
-        table = self.query_one(DataTable)
-
         branches, stashes, worktrees = await asyncio.gather(
             get_branch_list_async(repo_path),
             get_stash_list(repo_path),
             get_worktree_list(repo_path),
         )
 
+        self._branch_items = branches
+        self._stash_items = stashes
+        self._worktree_items = worktrees
+
+        self._refresh_repo_detail_table()
+
+        for branch in self._branch_items:
+            self.run_worker(
+                self._load_branch_pr(repo_path, branch),
+                group="branch_prs",
+                exclusive=False,
+            )
+
+    def _refresh_repo_detail_table(self) -> None:
+        """Refresh the repo detail table with current filters/sorts"""
+        table = self.query_one(DataTable)
+        table.clear(columns=True)
+        table.add_column("Kind", width=12)
+        table.add_column("Name", width=40)
+        table.add_column("Status", width=20)
+        table.add_column("Reference", width=50)
+
+        filtered_branches = self._filter_branches(self._branch_items)
+        sorted_branches = self._sort_branches(filtered_branches)
+
         first_row_key = None
 
-        for branch in branches:
+        for branch in sorted_branches:
             ahead_behind = []
             if branch.ahead > 0:
                 ahead_behind.append(f"↑{branch.ahead}")
@@ -447,7 +489,7 @@ class MultiRepoViewApp(App):
             if first_row_key is None:
                 first_row_key = row_key
 
-        for stash in stashes:
+        for stash in self._stash_items:
             row_key = f"stash:{stash['name']}"
             table.add_row(
                 "stash",
@@ -459,7 +501,7 @@ class MultiRepoViewApp(App):
             if first_row_key is None:
                 first_row_key = row_key
 
-        for worktree in worktrees:
+        for worktree in self._worktree_items:
             status = "detached" if worktree.is_detached else "—"
             row_key = f"worktree:{worktree.path}"
             table.add_row(
@@ -471,13 +513,6 @@ class MultiRepoViewApp(App):
             )
             if first_row_key is None:
                 first_row_key = row_key
-
-        for branch in branches:
-            self.run_worker(
-                self._load_branch_pr(repo_path, branch),
-                group="branch_prs",
-                exclusive=False,
-            )
 
         if first_row_key and table.row_count > 0:
             table.move_cursor(row=0)
@@ -493,6 +528,59 @@ class MultiRepoViewApp(App):
         else:
             detail_panel = self.query_one("#detail-panel", DetailPanel)
             detail_panel.clear()
+
+    def _filter_branches(self, branches: list[BranchInfo]) -> list[BranchInfo]:
+        """Apply active filters to branch list"""
+        if not self._active_filters:
+            filtered = branches
+        else:
+            filtered = branches
+            for active_filter in self._active_filters:
+                filtered = self._apply_branch_filter(filtered, active_filter)
+
+        if self._search_text:
+            search_lower = self._search_text.lower()
+            filtered = [b for b in filtered if search_lower in b.name.lower()]
+
+        return filtered
+
+    def _apply_branch_filter(
+        self, branches: list[BranchInfo], active_filter: ActiveFilter
+    ) -> list[BranchInfo]:
+        """Apply a single filter to branches"""
+        match active_filter.mode:
+            case FilterMode.AHEAD:
+                predicate = lambda b: b.ahead > 0
+            case FilterMode.BEHIND:
+                predicate = lambda b: b.behind > 0
+            case FilterMode.DIRTY:
+                predicate = lambda b: b.ahead > 0
+            case _:
+                predicate = lambda _: True
+
+        if active_filter.inverted:
+            return [b for b in branches if not predicate(b)]
+        return [b for b in branches if predicate(b)]
+
+    def _sort_branches(self, branches: list[BranchInfo]) -> list[BranchInfo]:
+        """Sort branches based on current sort mode"""
+        match self._sort_mode:
+            case SortMode.NAME:
+                sorted_branches = sorted(branches, key=lambda b: b.name.lower())
+            case SortMode.STATUS:
+                sorted_branches = sorted(
+                    branches,
+                    key=lambda b: (-b.ahead, -b.behind, b.name.lower()),
+                )
+            case SortMode.BRANCH:
+                sorted_branches = sorted(branches, key=lambda b: b.name.lower())
+            case _:
+                sorted_branches = branches
+
+        if self._sort_reverse:
+            sorted_branches = list(reversed(sorted_branches))
+
+        return sorted_branches
 
     async def _load_branch_pr(self, repo_path: Path, branch: BranchInfo) -> None:
         """Load PR info for a branch"""
@@ -623,7 +711,10 @@ class MultiRepoViewApp(App):
 
     def action_back(self) -> None:
         if self._search_mode:
-            self._exit_search_mode(keep_text=False)
+            self._search_mode = False
+            self._search_text = ""
+            self._refresh_table_with_filters()
+            self._update_status_badges()
             return
 
         if self._current_view == "repo_list":
@@ -722,28 +813,28 @@ class MultiRepoViewApp(App):
         )
 
     def action_show_filter_popup(self) -> None:
-        if self._current_view != "repo_list":
-            return
-
         def handle_filter_result(result: list[ActiveFilter] | None) -> None:
             if result is not None:
                 self._active_filters = result
-                self._refresh_table_with_filters()
-                self._update_status_badges()
-                self._update_filter_sort_status()
+                if self._current_view == "repo_list":
+                    self._refresh_table_with_filters()
+                    self._update_status_badges()
+                    self._update_filter_sort_status()
+                elif self._current_view == "repo_detail":
+                    self._refresh_repo_detail_table()
 
         self.push_screen(FilterPopup(self._active_filters), handle_filter_result)
 
     def action_show_sort_popup(self) -> None:
-        if self._current_view != "repo_list":
-            return
-
         def handle_sort_result(result: tuple[SortMode, bool] | None) -> None:
             if result is not None:
                 self._sort_mode, self._sort_reverse = result
-                self._refresh_table_with_filters()
-                self._update_status_badges()
-                self._update_filter_sort_status()
+                if self._current_view == "repo_list":
+                    self._refresh_table_with_filters()
+                    self._update_status_badges()
+                    self._update_filter_sort_status()
+                elif self._current_view == "repo_detail":
+                    self._refresh_repo_detail_table()
 
         self.push_screen(SortPopup(self._sort_mode, self._sort_reverse), handle_sort_result)
 
@@ -752,45 +843,47 @@ class MultiRepoViewApp(App):
         self.push_screen(HelpModal(self.theme_name))
 
     def action_search(self) -> None:
-        """Enter search mode"""
-        if self._current_view != "repo_list":
-            return
-
         self._search_mode = True
         self._search_text = ""
-        search_input = self.query_one("#search-input", Input)
-        search_input.value = ""
-        search_input.disabled = False
-        search_input.styles.display = "block"
-        search_input.focus()
+        if self._current_view == "repo_list":
+            self._update_status_badges()
 
-    @on(Input.Changed, "#search-input")
-    def on_search_changed(self, event: Input.Changed) -> None:
-        """Update search text and refresh table"""
+    def on_key(self, event: Key) -> None:
         if not self._search_mode:
             return
 
-        self._search_text = event.value
-        self._refresh_table_with_filters()
-        self._update_status_badges()
-
-    @on(Input.Submitted, "#search-input")
-    def on_search_submitted(self, event: Input.Submitted) -> None:
-        """Accept search and return focus to table"""
-        self._exit_search_mode(keep_text=True)
-
-    def _exit_search_mode(self, keep_text: bool = False) -> None:
-        """Exit search mode and optionally clear search text"""
-        if not keep_text:
+        if event.key == "escape":
+            self._search_mode = False
             self._search_text = ""
-            self._refresh_table_with_filters()
-
-        self._search_mode = False
-        search_input = self.query_one("#search-input", Input)
-        search_input.disabled = True
-        search_input.styles.display = "none"
-
-        table = self.query_one(DataTable)
-        table.focus()
-
-        self._update_status_badges()
+            if self._current_view == "repo_list":
+                self._refresh_table_with_filters()
+                self._update_status_badges()
+            elif self._current_view == "repo_detail":
+                self._refresh_repo_detail_table()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "enter":
+            self._search_mode = False
+            if self._current_view == "repo_list":
+                self._update_status_badges()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "backspace":
+            if self._search_text:
+                self._search_text = self._search_text[:-1]
+                if self._current_view == "repo_list":
+                    self._refresh_table_with_filters()
+                    self._update_status_badges()
+                elif self._current_view == "repo_detail":
+                    self._refresh_repo_detail_table()
+            event.prevent_default()
+            event.stop()
+        elif event.is_printable and event.character:
+            self._search_text += event.character
+            if self._current_view == "repo_list":
+                self._refresh_table_with_filters()
+                self._update_status_badges()
+            elif self._current_view == "repo_detail":
+                self._refresh_repo_detail_table()
+            event.prevent_default()
+            event.stop()

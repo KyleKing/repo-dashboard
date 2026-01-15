@@ -35,28 +35,6 @@ Breadcrumbs {
     display: none;
 }
 
-/* Search Input */
-#search-input {
-    height: 1;
-    padding: 0 1;
-    margin: 0 1;
-    background: #24273a;
-    border: solid #c6a0f6;
-    display: none;
-}
-
-#search-input:focus {
-    border: solid #c6a0f6;
-}
-
-#search-input > .input--placeholder {
-    color: #6e738d;
-}
-
-#search-input > .input--cursor {
-    background: #c6a0f6;
-}
-
 /* Main layout wrapper */
 #main-layout {
     height: 1fr;
@@ -243,7 +221,7 @@ FilterPopup {
 }
 
 .filter-popup-container {
-    width: 45;
+    width: 35;
     height: auto;
     background: #24273a;
     border: solid #eed49f;
@@ -261,7 +239,7 @@ SortPopup {
 }
 
 .sort-popup-container {
-    width: 40;
+    width: 30;
     height: auto;
     background: #24273a;
     border: solid #8bd5ca;

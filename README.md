@@ -1,5 +1,7 @@
 # Multi-Repo View
 
+![.github/assets/demo.gif](https://raw.githubusercontent.com/kyleking/wip-multi-repo-view/main/.github/assets/demo.gif)
+
 K9s-inspired TUI for managing multiple git repositories.
 
 ## Usage
@@ -110,3 +112,13 @@ uv run pytest tests/test_snapshots.py --snapshot-update
 # Commit updated snapshots with your changes
 git add tests/__snapshots__/
 ```
+
+### Recording the Demo
+
+Generate demo GIF using VHS:
+
+```sh
+vhs < .github/assets/demo.tape
+```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for more details on VHS setup and recording.
