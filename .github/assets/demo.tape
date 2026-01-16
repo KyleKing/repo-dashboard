@@ -61,7 +61,7 @@ Type `clear`  Enter
 Show
 
 # Start the TUI
-Type `uv run multi-repo-view --depth 2`  Sleep 500ms  Enter
+Type `uv run reda --depth 2`  Sleep 500ms  Enter
 Sleep 3s
 
 # Navigate repos

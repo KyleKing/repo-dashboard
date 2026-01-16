@@ -1,6 +1,6 @@
-# Multi-Repo View
+# Repo Dashboard
 
-![.github/assets/demo.gif](https://raw.githubusercontent.com/kyleking/wip-multi-repo-view/main/.github/assets/demo.gif)
+![.github/assets/demo.gif](https://raw.githubusercontent.com/kyleking/wip-reda/main/.github/assets/demo.gif)
 
 K9s-inspired TUI for managing multiple git repositories.
 
@@ -8,16 +8,16 @@ K9s-inspired TUI for managing multiple git repositories.
 
 ```sh
 # Scan current directory
-uv run multi-repo-view
+uv run reda
 
 # Scan specific paths
-uv run multi-repo-view ~/Developer ~/Projects
+uv run reda ~/Developer ~/Projects
 
 # Scan with custom depth
-uv run multi-repo-view --depth 2 ~/Developer
+uv run reda --depth 2 ~/Developer
 
 # Use light theme
-uv run multi-repo-view --theme light
+uv run reda --theme light
 ```
 
 ## Keybindings

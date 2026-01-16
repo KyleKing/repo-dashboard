@@ -9,24 +9,24 @@ from textual.containers import Container, Vertical
 from textual.events import Key
 from textual.widgets import DataTable, Footer, Static
 
-from multi_repo_view.cache import branch_cache, commit_cache, pr_cache
-from multi_repo_view.discovery import discover_git_repos
-from multi_repo_view.git_ops import (
+from repo_dashboard.cache import branch_cache, commit_cache, pr_cache
+from repo_dashboard.discovery import discover_git_repos
+from repo_dashboard.git_ops import (
     get_branch_list_async,
     get_repo_summary_async,
     get_stash_list,
     get_upstream_repo,
     get_worktree_list,
 )
-from multi_repo_view.github_ops import get_pr_for_branch_async
-from multi_repo_view.modals import (
+from repo_dashboard.github_ops import get_pr_for_branch_async
+from repo_dashboard.modals import (
     CopyPopup,
     DetailPanel,
     FilterPopup,
     HelpModal,
     SortPopup,
 )
-from multi_repo_view.models import (
+from repo_dashboard.models import (
     ActiveFilter,
     BranchInfo,
     FilterMode,
@@ -34,7 +34,7 @@ from multi_repo_view.models import (
     RepoSummary,
     SortMode,
 )
-from multi_repo_view.utils import format_relative_time, truncate
+from repo_dashboard.utils import format_relative_time, truncate
 
 
 class StatusBadge:
@@ -92,8 +92,8 @@ class Breadcrumbs(Static):
         self.refresh()
 
 
-class MultiRepoViewApp(App):
-    TITLE = "Multi-Repo View"
+class RepoDashboardApp(App):
+    TITLE = "Repo Dashboard"
 
     CSS_PATH = "app.tcss"
 
@@ -246,7 +246,7 @@ class MultiRepoViewApp(App):
         self._update_repo_table_row(path, summary)
 
     def _refresh_table_with_filters(self) -> None:
-        from multi_repo_view.filters import filter_repos_multi, sort_repos
+        from repo_dashboard.filters import filter_repos_multi, sort_repos
 
         if self._current_view != "repo_list":
             return
@@ -332,7 +332,7 @@ class MultiRepoViewApp(App):
             status_widget.styles.display = "none"
 
     def _update_status_badges(self) -> None:
-        from multi_repo_view.filters import filter_repos_multi
+        from repo_dashboard.filters import filter_repos_multi
 
         if self._current_view != "repo_list":
             return
@@ -617,7 +617,7 @@ class MultiRepoViewApp(App):
         detail_panel.set_loading(f"Branch: {branch_name}")
 
         async def load_branch() -> None:
-            from multi_repo_view.github_ops import get_pr_detail
+            from repo_dashboard.github_ops import get_pr_detail
 
             pr_detail = await get_pr_detail(self._selected_repo, branch_name)
             detail_panel = self.query_one("#detail-panel", DetailPanel)

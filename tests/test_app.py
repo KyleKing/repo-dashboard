@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from textual.widgets import DataTable
 
-from multi_repo_view.app import MultiRepoViewApp
-from multi_repo_view.models import (
+from repo_dashboard.app import RepoDashboardApp
+from repo_dashboard.models import (
     ActiveFilter,
     BranchInfo,
     FilterMode,
@@ -67,7 +67,7 @@ async def test_shows_warning_when_no_repos(tmp_path: Path) -> None:
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
 
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[empty_dir],
         scan_depth=1,
         theme="dark",
@@ -79,7 +79,7 @@ async def test_shows_warning_when_no_repos(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_creates_datatable_on_mount(tmp_repos: list[Path]) -> None:
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[tmp_repos[0].parent],
         scan_depth=1,
         theme="dark",
@@ -93,7 +93,7 @@ async def test_creates_datatable_on_mount(tmp_repos: list[Path]) -> None:
 
 @pytest.mark.asyncio
 async def test_datatable_has_correct_columns(tmp_repos: list[Path]) -> None:
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[tmp_repos[0].parent],
         scan_depth=1,
         theme="dark",
@@ -110,7 +110,7 @@ async def test_datatable_has_correct_columns(tmp_repos: list[Path]) -> None:
 
 @pytest.mark.asyncio
 async def test_filter_popup_adds_filter(tmp_repos: list[Path]) -> None:
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[tmp_repos[0].parent],
         scan_depth=1,
         theme="dark",
@@ -127,7 +127,7 @@ async def test_filter_popup_adds_filter(tmp_repos: list[Path]) -> None:
 
 @pytest.mark.asyncio
 async def test_sort_popup_changes_mode(tmp_repos: list[Path]) -> None:
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[tmp_repos[0].parent],
         scan_depth=1,
         theme="dark",
@@ -144,7 +144,7 @@ async def test_sort_popup_changes_mode(tmp_repos: list[Path]) -> None:
 
 @pytest.mark.asyncio
 async def test_refresh_resets_filter_and_sort(tmp_repos: list[Path]) -> None:
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[tmp_repos[0].parent],
         scan_depth=1,
         theme="dark",
@@ -166,7 +166,7 @@ async def test_refresh_resets_filter_and_sort(tmp_repos: list[Path]) -> None:
 
 @pytest.mark.asyncio
 async def test_detail_panel_hidden_initially(tmp_repos: list[Path]) -> None:
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[tmp_repos[0].parent],
         scan_depth=1,
         theme="dark",
@@ -174,7 +174,7 @@ async def test_detail_panel_hidden_initially(tmp_repos: list[Path]) -> None:
 
     async with app.run_test() as pilot:
         await pilot.pause()
-        from multi_repo_view.modals import DetailPanel
+        from repo_dashboard.modals import DetailPanel
 
         panel = app.query_one("#detail-panel", DetailPanel)
         assert panel.display is False
@@ -184,7 +184,7 @@ async def test_detail_panel_hidden_initially(tmp_repos: list[Path]) -> None:
 async def test_detail_panel_shown_in_repo_detail_view(tmp_repos: list[Path]) -> None:
     from datetime import datetime
 
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[tmp_repos[0].parent],
         scan_depth=1,
         theme="dark",
@@ -192,16 +192,16 @@ async def test_detail_panel_shown_in_repo_detail_view(tmp_repos: list[Path]) -> 
 
     summary = _make_summary(tmp_repos[0])
 
-    with patch("multi_repo_view.app.get_branch_list_async", new=AsyncMock(return_value=[])):
-        with patch("multi_repo_view.app.get_stash_list", new=AsyncMock(return_value=[])):
-            with patch("multi_repo_view.app.get_worktree_list", new=AsyncMock(return_value=[])):
+    with patch("repo_dashboard.app.get_branch_list_async", new=AsyncMock(return_value=[])):
+        with patch("repo_dashboard.app.get_stash_list", new=AsyncMock(return_value=[])):
+            with patch("repo_dashboard.app.get_worktree_list", new=AsyncMock(return_value=[])):
                 async with app.run_test() as pilot:
                     await pilot.pause()
                     app._summaries[tmp_repos[0]] = summary
                     app._show_repo_detail_view(tmp_repos[0])
                     await pilot.pause()
 
-                    from multi_repo_view.modals import DetailPanel
+                    from repo_dashboard.modals import DetailPanel
 
                     panel = app.query_one("#detail-panel", DetailPanel)
                     assert panel.display is True
@@ -211,7 +211,7 @@ async def test_detail_panel_shown_in_repo_detail_view(tmp_repos: list[Path]) -> 
 async def test_detail_panel_auto_shows_first_item(tmp_repos: list[Path]) -> None:
     from datetime import datetime
 
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[tmp_repos[0].parent],
         scan_depth=1,
         theme="dark",
@@ -219,9 +219,9 @@ async def test_detail_panel_auto_shows_first_item(tmp_repos: list[Path]) -> None
 
     summary = _make_summary(tmp_repos[0])
 
-    with patch("multi_repo_view.app.get_branch_list_async", new=AsyncMock(return_value=[_make_branch_info("main", True)])):
-        with patch("multi_repo_view.app.get_stash_list", new=AsyncMock(return_value=[])):
-            with patch("multi_repo_view.app.get_worktree_list", new=AsyncMock(return_value=[])):
+    with patch("repo_dashboard.app.get_branch_list_async", new=AsyncMock(return_value=[_make_branch_info("main", True)])):
+        with patch("repo_dashboard.app.get_stash_list", new=AsyncMock(return_value=[])):
+            with patch("repo_dashboard.app.get_worktree_list", new=AsyncMock(return_value=[])):
                 async with app.run_test() as pilot:
                     await pilot.pause()
                     app._summaries[tmp_repos[0]] = summary
@@ -229,7 +229,7 @@ async def test_detail_panel_auto_shows_first_item(tmp_repos: list[Path]) -> None
                     app._show_repo_detail_view(tmp_repos[0])
                     await pilot.pause()
 
-                    from multi_repo_view.modals import DetailPanel
+                    from repo_dashboard.modals import DetailPanel
 
                     panel = app.query_one("#detail-panel", DetailPanel)
                     title = panel.query_one("#detail-panel-title")
@@ -241,7 +241,7 @@ async def test_detail_panel_auto_shows_first_item(tmp_repos: list[Path]) -> None
 async def test_detail_panel_shows_placeholder_when_no_items(tmp_repos: list[Path]) -> None:
     from datetime import datetime
 
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[tmp_repos[0].parent],
         scan_depth=1,
         theme="dark",
@@ -249,9 +249,9 @@ async def test_detail_panel_shows_placeholder_when_no_items(tmp_repos: list[Path
 
     summary = _make_summary(tmp_repos[0])
 
-    with patch("multi_repo_view.app.get_branch_list_async", new=AsyncMock(return_value=[])):
-        with patch("multi_repo_view.app.get_stash_list", new=AsyncMock(return_value=[])):
-            with patch("multi_repo_view.app.get_worktree_list", new=AsyncMock(return_value=[])):
+    with patch("repo_dashboard.app.get_branch_list_async", new=AsyncMock(return_value=[])):
+        with patch("repo_dashboard.app.get_stash_list", new=AsyncMock(return_value=[])):
+            with patch("repo_dashboard.app.get_worktree_list", new=AsyncMock(return_value=[])):
                 async with app.run_test() as pilot:
                     await pilot.pause()
                     app._summaries[tmp_repos[0]] = summary
@@ -259,7 +259,7 @@ async def test_detail_panel_shows_placeholder_when_no_items(tmp_repos: list[Path
                     app._show_repo_detail_view(tmp_repos[0])
                     await pilot.pause()
 
-                    from multi_repo_view.modals import DetailPanel
+                    from repo_dashboard.modals import DetailPanel
 
                     panel = app.query_one("#detail-panel", DetailPanel)
                     title = panel.query_one("#detail-panel-title")

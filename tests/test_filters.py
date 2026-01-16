@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from multi_repo_view.filters import (
+from repo_dashboard.filters import (
     _filter_ahead,
     _filter_behind,
     _filter_dirty,
@@ -17,7 +17,7 @@ from multi_repo_view.filters import (
     filter_repos,
     sort_repos,
 )
-from multi_repo_view.models import (
+from repo_dashboard.models import (
     FilterMode,
     PRInfo,
     RepoStatus,

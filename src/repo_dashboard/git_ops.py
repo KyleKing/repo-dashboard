@@ -5,8 +5,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from multi_repo_view.cache import branch_cache, commit_cache
-from multi_repo_view.models import (
+from repo_dashboard.cache import branch_cache, commit_cache
+from repo_dashboard.models import (
     BranchInfo,
     CommitInfo,
     RepoStatus,
@@ -487,7 +487,7 @@ async def get_branch_detail_async(
     pr_detail: "PRDetail | None" = None,
 ) -> "BranchDetail":
     """Aggregate all branch detail data in parallel"""
-    from multi_repo_view.models import BranchDetail
+    from repo_dashboard.models import BranchDetail
 
     branches = await get_branch_list_async(path)
     branch_info = next((b for b in branches if b.name == branch_name), None)

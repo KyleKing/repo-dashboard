@@ -1,7 +1,7 @@
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from multi_repo_view.models import ActiveFilter, FilterMode, RepoSummary, SortMode
+from repo_dashboard.models import ActiveFilter, FilterMode, RepoSummary, SortMode
 
 
 def filter_repos(

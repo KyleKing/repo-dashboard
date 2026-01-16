@@ -3,13 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from multi_repo_view.modals import (
+from repo_dashboard.modals import (
     HelpModal,
     _format_commits,
     _format_files,
     _format_pr_detail,
 )
-from multi_repo_view.models import CommitInfo, PRDetail
+from repo_dashboard.models import CommitInfo, PRDetail
 
 
 def test_format_commits_empty() -> None:

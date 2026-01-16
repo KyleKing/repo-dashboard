@@ -1,4 +1,4 @@
-# Multi-Repo View - Development Guide
+# Repo Dashboard - Development Guide
 
 K9s-inspired Textual TUI for managing multiple git repositories with progressive loading, filtering, and GitHub PR integration.
 
@@ -11,7 +11,7 @@ K9s-inspired Textual TUI for managing multiple git repositories with progressive
 ### Architecture
 
 ```
-src/multi_repo_view/
+src/repo_dashboard/
 ├── __main__.py      # CLI entry point
 ├── app.py           # Main Textual app, UI orchestration (684 lines)
 ├── models.py        # Data models (RepoSummary, BranchInfo, PRInfo, etc.)
@@ -49,10 +49,10 @@ tests/
 uv sync
 
 # Run the app
-uv run multi-repo-view
+uv run reda
 
 # Run with arguments
-uv run multi-repo-view ~/Developer --depth 2 --theme dark
+uv run reda ~/Developer --depth 2 --theme dark
 ```
 
 ## Testing
@@ -73,7 +73,7 @@ uv run pytest tests/test_filters.py
 uv run pytest tests/test_filters.py::test_filter_repos_with_search_text
 
 # Run with coverage
-uv run pytest --cov=multi_repo_view --cov-report=html
+uv run pytest --cov=repo_dashboard --cov-report=html
 
 # Stop on first failure
 uv run pytest -x
@@ -335,7 +335,7 @@ Refresh with `r` clears all caches.
 uv run textual console
 
 # In another terminal, run the app
-uv run multi-repo-view
+uv run reda
 ```
 
 ### Logging

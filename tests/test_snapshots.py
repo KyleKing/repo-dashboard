@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from textual.pilot import Pilot
 
-from multi_repo_view.app import MultiRepoViewApp
+from repo_dashboard.app import RepoDashboardApp
 
 
 def _init_git_repo(repo_path: Path, branch: str = "main") -> None:
@@ -57,7 +57,7 @@ def test_repo_list_view(snap_compare, tmp_path: Path) -> None:
         repo.mkdir()
         (repo / ".git").mkdir()
 
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[tmp_path],
         scan_depth=1,
         theme="dark",
@@ -79,7 +79,7 @@ def test_filter_sort_search_view(snap_compare, tmp_path: Path) -> None:
     dirty_repo = tmp_path / "dirty-repo"
     (dirty_repo / "uncommitted.txt").write_text("uncommitted changes")
 
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[tmp_path],
         scan_depth=1,
         theme="dark",
@@ -118,7 +118,7 @@ def test_repo_detail_view(snap_compare, tmp_path: Path) -> None:
     _create_stash(repo, "WIP: working on feature")
     _create_stash(repo, "Temporary changes")
 
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=[tmp_path],
         scan_depth=1,
         theme="dark",

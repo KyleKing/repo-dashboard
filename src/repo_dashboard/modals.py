@@ -7,7 +7,7 @@ from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import LoadingIndicator, Static
 
-from multi_repo_view.models import ActiveFilter, CommitInfo, FilterMode, PRDetail, SortMode
+from repo_dashboard.models import ActiveFilter, CommitInfo, FilterMode, PRDetail, SortMode
 
 
 def _format_commits(commits: list[CommitInfo], max_display: int = 10) -> str:
@@ -106,7 +106,7 @@ class BranchDetailModal(BaseDetailModal):
         self.pr_detail = pr_detail
 
     async def load_content(self) -> str:
-        from multi_repo_view.git_ops import get_branch_detail_async
+        from repo_dashboard.git_ops import get_branch_detail_async
 
         detail = await get_branch_detail_async(
             self.repo_path,
@@ -174,8 +174,8 @@ class StashDetailModal(BaseDetailModal):
         self.stash_name = stash_name
 
     async def load_content(self) -> str:
-        from multi_repo_view.git_ops import get_stash_detail
-        from multi_repo_view.utils import format_relative_time
+        from repo_dashboard.git_ops import get_stash_detail
+        from repo_dashboard.utils import format_relative_time
 
         detail = await get_stash_detail(self.repo_path, self.stash_name)
 
@@ -206,7 +206,7 @@ class WorktreeDetailModal(BaseDetailModal):
         self.worktree_path = Path(worktree_path)
 
     async def load_content(self) -> str:
-        from multi_repo_view.git_ops import (
+        from repo_dashboard.git_ops import (
             get_status_files_async,
             get_worktree_list,
         )
@@ -548,7 +548,7 @@ class DetailPanel(ScrollableContainer):
     async def show_branch(
         self, repo_path: Path, branch_name: str, pr_detail: PRDetail | None
     ) -> None:
-        from multi_repo_view.git_ops import get_branch_detail_async
+        from repo_dashboard.git_ops import get_branch_detail_async
 
         self._repo_path = repo_path
         self._current_item = f"branch:{branch_name}"
@@ -636,8 +636,8 @@ class DetailPanel(ScrollableContainer):
             self._set_error(f"Branch: {branch_name}", str(err))
 
     async def show_stash(self, repo_path: Path, stash_name: str) -> None:
-        from multi_repo_view.git_ops import get_stash_detail
-        from multi_repo_view.utils import format_relative_time
+        from repo_dashboard.git_ops import get_stash_detail
+        from repo_dashboard.utils import format_relative_time
 
         self._repo_path = repo_path
         self._current_item = f"stash:{stash_name}"
@@ -664,7 +664,7 @@ class DetailPanel(ScrollableContainer):
             self._set_error(f"Stash: {stash_name}", str(err))
 
     async def show_worktree(self, repo_path: Path, worktree_path: str) -> None:
-        from multi_repo_view.git_ops import get_status_files_async, get_worktree_list
+        from repo_dashboard.git_ops import get_status_files_async, get_worktree_list
 
         self._repo_path = repo_path
         self._current_item = f"worktree:{worktree_path}"

@@ -258,36 +258,6 @@ wheels = [
 ]
 
 [[package]]
-name = "multi-repo-view"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "pydantic" },
-    { name = "pyperclip" },
-    { name = "textual" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "pytest-textual-snapshot" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pydantic", specifier = ">=2.0" },
-    { name = "pyperclip", specifier = ">=1.8.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
-    { name = "pytest-textual-snapshot", marker = "extra == 'dev'", specifier = ">=0.1.0" },
-    { name = "textual", specifier = ">=0.47.0" },
-]
-provides-extras = ["dev"]
-
-[[package]]
 name = "packaging"
 version = "25.0"
 source = { registry = "https://pypi.org/simple" }
@@ -502,6 +472,36 @@ sdist = { url = "https://files.pythonhosted.org/packages/8b/75/2ef17ae52fa5bc848
 wheels = [
     { url = "https://files.pythonhosted.org/packages/70/2e/4bf16ed78b382b3d7c1e545475ec8cf04346870be662815540faf8f16e8c/pytest_textual_snapshot-1.0.0-py3-none-any.whl", hash = "sha256:dd3a421491a6b1987ee7b4336d7f65299524924d2b0a297e69733b73b01570e1", size = 11171, upload-time = "2024-07-22T15:17:43.167Z" },
 ]
+
+[[package]]
+name = "repo-dashboard"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pyperclip" },
+    { name = "textual" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-textual-snapshot" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pyperclip", specifier = ">=1.8.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "pytest-textual-snapshot", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "textual", specifier = ">=0.47.0" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "rich"

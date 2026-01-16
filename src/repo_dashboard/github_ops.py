@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from multi_repo_view.models import PRDetail, PRInfo
+from repo_dashboard.models import PRDetail, PRInfo
 
 
 def _get_checks_status(rollup: list | None) -> str | None:

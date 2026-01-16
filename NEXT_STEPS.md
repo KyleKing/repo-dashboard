@@ -23,13 +23,13 @@
 
 ```bash
 # Run app
-uv run multi-repo-view
+uv run reda
 
 # Run tests
 uv run pytest -v
 
 # Run with custom options
-uv run multi-repo-view --depth 3 --theme light
+uv run reda --depth 3 --theme light
 
 # Format code
 uv run ruff format src/ tests/

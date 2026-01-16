@@ -1,4 +1,4 @@
-# Contributing to Multi-Repo View
+# Contributing to Repo Dashboard
 
 ## Development Setup
 
@@ -16,7 +16,7 @@
 uv sync
 
 # Run the app
-uv run multi-repo-view
+uv run reda
 ```
 
 ## Testing
@@ -40,7 +40,7 @@ uv run pytest tests/test_filters.py
 
 Run with coverage:
 ```bash
-uv run pytest --cov=multi_repo_view --cov-report=html
+uv run pytest --cov=repo_dashboard --cov-report=html
 ```
 
 Stop on first failure:
@@ -181,7 +181,7 @@ See [CLAUDE.md](./CLAUDE.md) for detailed architecture documentation.
 uv run textual console
 
 # In another terminal, run the app
-uv run multi-repo-view
+uv run reda
 ```
 
 ### Logging

@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 
-from multi_repo_view.app import MultiRepoViewApp
+from repo_dashboard.app import RepoDashboardApp
 
 
 def main() -> None:
@@ -34,7 +34,7 @@ def main() -> None:
     args = parser.parse_args()
 
     paths = [p.expanduser().resolve() for p in args.paths]
-    app = MultiRepoViewApp(
+    app = RepoDashboardApp(
         scan_paths=paths,
         scan_depth=args.depth,
         theme=args.theme,

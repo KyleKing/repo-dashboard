@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "multi-repo-view"
+name = "repo-dashboard"
 version = "0.1.0"
 description = "A Textual TUI for viewing git status across multiple repositories"
 readme = "README.md"
@@ -23,10 +23,10 @@ dev = [
 ]
 
 [project.scripts]
-multi-repo-view = "multi_repo_view.__main__:main"
+reda = "repo_dashboard.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/multi_repo_view"]
+packages = ["src/repo_dashboard"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
