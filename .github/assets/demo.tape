@@ -45,7 +45,7 @@
 
 Output .github/assets/demo.gif
 Set Shell bash
-Set PlaybackSpeed 0.5
+Set PlaybackSpeed 1.0
 Set TypingSpeed 10ms
 
 Set Theme "Catppuccin Macchiato"
@@ -62,66 +62,54 @@ Show
 
 # Start the TUI
 Type `uv run reda --depth 2`  Sleep 500ms  Enter
-Sleep 3s
+Sleep 2s
 
 # Navigate repos
-Down 2
+Down 3
+Sleep 800ms
+
+# Cycle filter mode (2 examples)
+Type `f`
 Sleep 1s
-Down 1
+Type `f`
 Sleep 1s
 
-# Cycle filter mode
-Type `f`
-Sleep 1.5s
-Type `f`
-Sleep 1.5s
-Type `f`
-Sleep 1.5s
-Type `f`
-Sleep 1.5s
-
-# Cycle sort mode
+# Cycle sort mode (2 examples)
 Type `s`
-Sleep 1.5s
+Sleep 1s
 Type `s`
-Sleep 1.5s
-Type `s`
-Sleep 1.5s
+Sleep 1s
 
 # Activate search
 Type `/`
-Sleep 500ms
+Sleep 400ms
 Type `multi`
-Sleep 2s
+Sleep 1.5s
 Ctrl+u
-Sleep 500ms
+Sleep 400ms
 
 # Exit search
 Escape
-Sleep 1s
+Sleep 700ms
 
 # Select a repo to drill down
 Space
-Sleep 2s
+Sleep 1.5s
 
 # Navigate branches
-Down 2
-Sleep 1s
-Down 1
-Sleep 1s
+Down 3
+Sleep 700ms
 
 # Go back
 Escape
-Sleep 1s
+Sleep 700ms
 
 # Show help
 Type `?`
-Sleep 3s
+Sleep 2s
 
-# Close help
+# Close help and quit
 Escape
-Sleep 1s
-
-# Quit
-Type `q`
 Sleep 500ms
+Type `q`
+Sleep 300ms
