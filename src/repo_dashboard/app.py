@@ -11,14 +11,8 @@ from textual.widgets import DataTable, Footer, Static
 
 from repo_dashboard.cache import branch_cache, commit_cache, pr_cache
 from repo_dashboard.discovery import discover_git_repos
-from repo_dashboard.git_ops import (
-    get_branch_list_async,
-    get_repo_summary_async,
-    get_stash_list,
-    get_upstream_repo,
-    get_worktree_list,
-)
 from repo_dashboard.github_ops import get_pr_for_branch_async
+from repo_dashboard.vcs_factory import get_vcs_operations
 from repo_dashboard.modals import (
     CopyPopup,
     DetailPanel,
@@ -205,9 +199,10 @@ class RepoDashboardApp(App):
 
     async def _load_repo_summary(self, path: Path) -> None:
         """Load single repo summary and update table"""
-        summary = await get_repo_summary_async(path)
+        vcs_ops = get_vcs_operations(path)
+        summary = await vcs_ops.get_repo_summary_async(path)
 
-        upstream = await get_upstream_repo(path)
+        upstream = await vcs_ops.get_upstream_repo(path)
         if upstream:
             cache_key = f"{upstream}:{summary.current_branch}"
             if pr_info := pr_cache.get(cache_key):
@@ -300,8 +295,12 @@ class RepoDashboardApp(App):
             branch_text = truncate(summary.current_branch, 16)
             colored_branch = f"[{branch_color}]{branch_text}[/]"
 
+            vcs_badge_color = "#c6a0f6" if summary.vcs_type == "jj" else "#8aadf4"
+            vcs_badge = f"[{vcs_badge_color}]{summary.vcs_type}[/]"
+            name_with_badge = f"{vcs_badge} {truncate(summary.name, 24)}"
+
             table.add_row(
-                truncate(summary.name, 28),
+                name_with_badge,
                 colored_branch,
                 f"{status_icon}{summary.status_summary}",
                 truncate(pr_text, 48),
@@ -346,11 +345,22 @@ class RepoDashboardApp(App):
         dirty = sum(1 for s in filtered.values() if s.uncommitted_count > 0)
         with_pr = sum(1 for s in filtered.values() if s.pr_info)
 
+        git_count = sum(1 for s in filtered.values() if s.vcs_type == "git")
+        jj_count = sum(1 for s in filtered.values() if s.vcs_type == "jj")
+
         badges = [
             StatusBadge("repos", f"{visible}/{total}", "#cad3f5", "#363a4f"),
+        ]
+
+        if git_count > 0:
+            badges.append(StatusBadge("git", str(git_count), "#24273a", "#8aadf4"))
+        if jj_count > 0:
+            badges.append(StatusBadge("jj", str(jj_count), "#24273a", "#c6a0f6"))
+
+        badges.extend([
             StatusBadge("dirty", str(dirty), "#24273a", "#f5a97f"),
             StatusBadge("PRs", str(with_pr), "#24273a", "#a6da95"),
-        ]
+        ])
 
         if self._active_filters:
             filter_keys = "".join(f.short_key for f in self._active_filters)
@@ -436,10 +446,11 @@ class RepoDashboardApp(App):
 
     async def _load_repo_details(self, repo_path: Path) -> None:
         """Load all branches, stashes, and worktrees for repo"""
+        vcs_ops = get_vcs_operations(repo_path)
         branches, stashes, worktrees = await asyncio.gather(
-            get_branch_list_async(repo_path),
-            get_stash_list(repo_path),
-            get_worktree_list(repo_path),
+            vcs_ops.get_branch_list_async(repo_path),
+            vcs_ops.get_stash_list(repo_path),
+            vcs_ops.get_worktree_list(repo_path),
         )
 
         self._branch_items = branches
@@ -586,7 +597,8 @@ class RepoDashboardApp(App):
 
     async def _load_branch_pr(self, repo_path: Path, branch: BranchInfo) -> None:
         """Load PR info for a branch"""
-        upstream = await get_upstream_repo(repo_path)
+        vcs_ops = get_vcs_operations(repo_path)
+        upstream = await vcs_ops.get_upstream_repo(repo_path)
         if not upstream:
             return
 

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from repo_dashboard.vcs_git import GitOperations
+from repo_dashboard.vcs_jj import JJOperations
 from repo_dashboard.vcs_protocol import VCSOperations, VCSType
 
 
@@ -25,7 +26,7 @@ def get_vcs_operations(repo_path: Path) -> VCSOperations:
     vcs_type = detect_vcs_type(repo_path)
 
     if vcs_type == "jj":
-        raise NotImplementedError("JJ support not yet implemented (coming in Stage 2)")
+        return JJOperations()
     if vcs_type == "git":
         return GitOperations()
 

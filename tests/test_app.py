@@ -193,19 +193,23 @@ async def test_detail_panel_shown_in_repo_detail_view(tmp_repos: list[Path]) -> 
 
     summary = _make_summary(tmp_repos[0])
 
-    with patch("repo_dashboard.app.get_branch_list_async", new=AsyncMock(return_value=[])):
-        with patch("repo_dashboard.app.get_stash_list", new=AsyncMock(return_value=[])):
-            with patch("repo_dashboard.app.get_worktree_list", new=AsyncMock(return_value=[])):
-                async with app.run_test() as pilot:
-                    await pilot.pause()
-                    app._summaries[tmp_repos[0]] = summary
-                    app._show_repo_detail_view(tmp_repos[0])
-                    await pilot.pause()
+    from repo_dashboard.vcs_git import GitOperations
+    mock_vcs = GitOperations()
+    mock_vcs.get_branch_list_async = AsyncMock(return_value=[])
+    mock_vcs.get_stash_list = AsyncMock(return_value=[])
+    mock_vcs.get_worktree_list = AsyncMock(return_value=[])
 
-                    from repo_dashboard.modals import DetailPanel
+    with patch("repo_dashboard.app.get_vcs_operations", return_value=mock_vcs):
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._summaries[tmp_repos[0]] = summary
+            app._show_repo_detail_view(tmp_repos[0])
+            await pilot.pause()
 
-                    panel = app.query_one("#detail-panel", DetailPanel)
-                    assert panel.display is True
+            from repo_dashboard.modals import DetailPanel
+
+            panel = app.query_one("#detail-panel", DetailPanel)
+            assert panel.display is True
 
 
 @pytest.mark.asyncio
@@ -220,22 +224,26 @@ async def test_detail_panel_auto_shows_first_item(tmp_repos: list[Path]) -> None
 
     summary = _make_summary(tmp_repos[0])
 
-    with patch("repo_dashboard.app.get_branch_list_async", new=AsyncMock(return_value=[_make_branch_info("main", True)])):
-        with patch("repo_dashboard.app.get_stash_list", new=AsyncMock(return_value=[])):
-            with patch("repo_dashboard.app.get_worktree_list", new=AsyncMock(return_value=[])):
-                async with app.run_test() as pilot:
-                    await pilot.pause()
-                    app._summaries[tmp_repos[0]] = summary
-                    app._selected_repo = tmp_repos[0]
-                    app._show_repo_detail_view(tmp_repos[0])
-                    await pilot.pause()
+    from repo_dashboard.vcs_git import GitOperations
+    mock_vcs = GitOperations()
+    mock_vcs.get_branch_list_async = AsyncMock(return_value=[_make_branch_info("main", True)])
+    mock_vcs.get_stash_list = AsyncMock(return_value=[])
+    mock_vcs.get_worktree_list = AsyncMock(return_value=[])
 
-                    from repo_dashboard.modals import DetailPanel
+    with patch("repo_dashboard.app.get_vcs_operations", return_value=mock_vcs):
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._summaries[tmp_repos[0]] = summary
+            app._selected_repo = tmp_repos[0]
+            app._show_repo_detail_view(tmp_repos[0])
+            await pilot.pause()
 
-                    panel = app.query_one("#detail-panel", DetailPanel)
-                    title = panel.query_one("#detail-panel-title")
-                    title_text = str(title.render())
-                    assert "Branch: main" in title_text
+            from repo_dashboard.modals import DetailPanel
+
+            panel = app.query_one("#detail-panel", DetailPanel)
+            title = panel.query_one("#detail-panel-title")
+            title_text = str(title.render())
+            assert "Branch: main" in title_text
 
 
 @pytest.mark.asyncio
@@ -250,19 +258,65 @@ async def test_detail_panel_shows_placeholder_when_no_items(tmp_repos: list[Path
 
     summary = _make_summary(tmp_repos[0])
 
-    with patch("repo_dashboard.app.get_branch_list_async", new=AsyncMock(return_value=[])):
-        with patch("repo_dashboard.app.get_stash_list", new=AsyncMock(return_value=[])):
-            with patch("repo_dashboard.app.get_worktree_list", new=AsyncMock(return_value=[])):
-                async with app.run_test() as pilot:
-                    await pilot.pause()
-                    app._summaries[tmp_repos[0]] = summary
-                    app._selected_repo = tmp_repos[0]
-                    app._show_repo_detail_view(tmp_repos[0])
-                    await pilot.pause()
+    from repo_dashboard.vcs_git import GitOperations
+    mock_vcs = GitOperations()
+    mock_vcs.get_branch_list_async = AsyncMock(return_value=[])
+    mock_vcs.get_stash_list = AsyncMock(return_value=[])
+    mock_vcs.get_worktree_list = AsyncMock(return_value=[])
 
-                    from repo_dashboard.modals import DetailPanel
+    with patch("repo_dashboard.app.get_vcs_operations", return_value=mock_vcs):
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._summaries[tmp_repos[0]] = summary
+            app._selected_repo = tmp_repos[0]
+            app._show_repo_detail_view(tmp_repos[0])
+            await pilot.pause()
 
-                    panel = app.query_one("#detail-panel", DetailPanel)
-                    title = panel.query_one("#detail-panel-title")
-                    title_text = str(title.render())
-                    assert "Select an item" in title_text
+            from repo_dashboard.modals import DetailPanel
+
+            panel = app.query_one("#detail-panel", DetailPanel)
+            title = panel.query_one("#detail-panel-title")
+            title_text = str(title.render())
+            assert "Select an item" in title_text
+
+
+@pytest.mark.asyncio
+async def test_vcs_badge_display_with_mixed_repos(tmp_path: Path) -> None:
+    """Test VCS badge display and counting with mixed git/jj repos"""
+    git_repo = tmp_path / "git-repo"
+    jj_repo = tmp_path / "jj-repo"
+    colocated_repo = tmp_path / "colocated-repo"
+
+    git_repo.mkdir()
+    (git_repo / ".git").mkdir()
+
+    jj_repo.mkdir()
+    (jj_repo / ".jj").mkdir()
+
+    colocated_repo.mkdir()
+    (colocated_repo / ".git").mkdir()
+    (colocated_repo / ".jj").mkdir()
+
+    app = RepoDashboardApp(
+        scan_paths=[tmp_path],
+        scan_depth=1,
+        theme="dark",
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        assert len(app._summaries) == 3
+
+        git_summary = app._summaries.get(git_repo)
+        jj_summary = app._summaries.get(jj_repo)
+        colocated_summary = app._summaries.get(colocated_repo)
+
+        assert git_summary is not None
+        assert git_summary.vcs_type == "git"
+
+        assert jj_summary is not None
+        assert jj_summary.vcs_type == "jj"
+
+        assert colocated_summary is not None
+        assert colocated_summary.vcs_type == "jj"
