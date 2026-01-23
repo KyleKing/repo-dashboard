@@ -14,6 +14,7 @@ from repo_dashboard.discovery import discover_git_repos
 from repo_dashboard.github_ops import get_pr_for_branch_async
 from repo_dashboard.vcs_factory import get_vcs_operations
 from repo_dashboard.modals import (
+    BatchTaskModal,
     CopyPopup,
     DetailPanel,
     FilterPopup,
@@ -109,6 +110,9 @@ class RepoDashboardApp(App):
         Binding("s", "show_sort_popup", "Sort"),
         Binding("/", "search", "Search", show=False),
         Binding("?", "help", "Help"),
+        Binding("F", "batch_fetch", "Fetch All", show=False),
+        Binding("P", "batch_prune", "Prune", show=False),
+        Binding("C", "batch_cleanup", "Cleanup", show=False),
     ]
 
     def __init__(
@@ -855,6 +859,59 @@ class RepoDashboardApp(App):
     def action_help(self) -> None:
         """Show help modal"""
         self.push_screen(HelpModal(self.theme_name))
+
+    def action_batch_fetch(self) -> None:
+        """Fetch all filtered repositories"""
+        from repo_dashboard.batch_tasks import task_fetch_all
+
+        if self._current_view != "repo_list":
+            self.notify("Batch tasks only available in repo list view", severity="warning")
+            return
+
+        filtered_repos = list(self._get_filtered_repos().values())
+        if not filtered_repos:
+            self.notify("No repositories to fetch", severity="warning")
+            return
+
+        self.push_screen(
+            BatchTaskModal("Fetch All Repositories", task_fetch_all, filtered_repos)
+        )
+
+    def action_batch_prune(self) -> None:
+        """Prune remote for all filtered repositories"""
+        from repo_dashboard.batch_tasks import task_prune_remote
+
+        if self._current_view != "repo_list":
+            self.notify("Batch tasks only available in repo list view", severity="warning")
+            return
+
+        filtered_repos = list(self._get_filtered_repos().values())
+        if not filtered_repos:
+            self.notify("No repositories to prune", severity="warning")
+            return
+
+        self.push_screen(
+            BatchTaskModal("Prune Remote Branches", task_prune_remote, filtered_repos)
+        )
+
+    def action_batch_cleanup(self) -> None:
+        """Cleanup merged branches for all filtered repositories"""
+        from repo_dashboard.batch_tasks import task_cleanup_merged
+
+        if self._current_view != "repo_list":
+            self.notify("Batch tasks only available in repo list view", severity="warning")
+            return
+
+        filtered_repos = list(self._get_filtered_repos().values())
+        if not filtered_repos:
+            self.notify("No repositories to cleanup", severity="warning")
+            return
+
+        self.push_screen(
+            BatchTaskModal(
+                "Cleanup Merged Branches", task_cleanup_merged, filtered_repos
+            )
+        )
 
     def action_search(self) -> None:
         self._search_mode = True

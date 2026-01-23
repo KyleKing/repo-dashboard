@@ -269,3 +269,52 @@ HelpModal {
     padding: 0 1;
     color: #cad3f5;
 }
+
+/* Batch Task Modal Styles */
+BatchTaskModal {
+    align: center middle;
+}
+
+.batch-task-modal-container {
+    width: 110;
+    height: auto;
+    max-height: 90%;
+    background: #24273a;
+    border: solid #a6da95;
+    padding: 1 2;
+}
+
+.batch-task-title {
+    text-style: bold;
+    color: #a6da95;
+    height: 1;
+    padding: 0 0 1 0;
+}
+
+.batch-task-subtitle {
+    color: #a5adcb;
+    height: 1;
+    padding: 0 0 1 0;
+}
+
+#batch-progress {
+    height: 1;
+    padding: 0 0 1 0;
+}
+
+.batch-task-results {
+    height: 1fr;
+    max-height: 60;
+    padding: 0 0 1 0;
+}
+
+#batch-results-table {
+    height: 100%;
+}
+
+.batch-task-footer {
+    height: 1;
+    text-align: center;
+    color: #a5adcb;
+    padding: 1 0 0 0;
+}

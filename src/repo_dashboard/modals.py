@@ -734,6 +734,83 @@ class DetailPanel(ScrollableContainer):
             self._set_error(f"Worktree: {worktree_path_obj.name}", str(err))
 
 
+class BatchTaskModal(ModalScreen):
+    """Modal for running batch tasks with progress and results"""
+
+    BINDINGS = [Binding("escape", "dismiss", "Close")]
+
+    def __init__(self, task_name: str, task_fn: callable, repos: list):
+        super().__init__()
+        self.task_name = task_name
+        self.task_fn = task_fn
+        self.repos = repos
+        self._completed = 0
+        self._total = len(repos)
+
+    def compose(self) -> ComposeResult:
+        from textual.widgets import DataTable, ProgressBar
+
+        with Vertical(classes="batch-task-modal-container"):
+            yield Static(
+                f"[bold]{self.task_name}[/]",
+                classes="batch-task-title",
+                markup=True,
+            )
+            yield Static(
+                f"Running on {self._total} repositories",
+                classes="batch-task-subtitle",
+            )
+            yield ProgressBar(total=self._total, id="batch-progress")
+            with ScrollableContainer(classes="batch-task-results"):
+                yield DataTable(id="batch-results-table", zebra_stripes=True)
+            yield Static(
+                "[#a5adcb]Esc[/] to close",
+                classes="batch-task-footer",
+                markup=True,
+            )
+
+    async def on_mount(self) -> None:
+        from repo_dashboard.batch_tasks import BatchTaskRunner
+
+        table = self.query_one("#batch-results-table", DataTable)
+        table.add_column("Repository", width=30)
+        table.add_column("Status", width=10)
+        table.add_column("Message", width=60)
+        table.add_column("Time", width=10)
+
+        progress = self.query_one("#batch-progress", ProgressBar)
+
+        runner = BatchTaskRunner(self.repos)
+
+        for repo in self.repos:
+            from repo_dashboard.vcs_factory import get_vcs_operations
+
+            vcs_ops = get_vcs_operations(repo.path)
+            import time
+
+            start = time.time()
+
+            try:
+                success, message = await self.task_fn(vcs_ops, repo.path)
+            except Exception as err:
+                success, message = False, f"Error: {err}"
+
+            duration = int((time.time() - start) * 1000)
+
+            status_icon = "[#a6da95]✓[/]" if success else "[#ed8796]✗[/]"
+            message_display = message[:57] + "..." if len(message) > 60 else message
+
+            table.add_row(
+                repo.name[:28],
+                status_icon,
+                message_display,
+                f"{duration}ms",
+            )
+
+            self._completed += 1
+            progress.update(progress=self._completed)
+
+
 class HelpModal(ModalScreen):
     """Display help and keybindings"""
 
@@ -763,6 +840,11 @@ class HelpModal(ModalScreen):
             s             Sort popup
             ?             Help (this screen)
             q             Quit
+
+            [bold]Batch Tasks[/]
+            F             Fetch all (filtered repos)
+            P             Prune remote (filtered repos)
+            C             Cleanup merged branches (filtered repos)
 
             [bold]Filter Popup (f)[/]
             d/a/b/p/s     Toggle dirty/ahead/behind/pr/stash
