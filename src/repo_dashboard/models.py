@@ -17,7 +17,11 @@ class RepoStatus(StrEnum):
     OK = "ok"
     WARNING = "warning"
     NO_GIT = "no_git"
+    NO_JJ = "no_jj"
     NO_GH = "no_gh"
+    NO_UPSTREAM = "no_upstream"
+    DETACHED_HEAD = "detached_head"
+    LOADING = "loading"
 
 
 class FilterMode(StrEnum):
@@ -98,6 +102,27 @@ class RepoSummary:
         if self.worktree_count > 0:
             parts.append(f"W{self.worktree_count}")
         return " ".join(parts) if parts else "clean"
+
+    @property
+    def warning_message(self) -> str | None:
+        """Get human-readable warning message based on status"""
+        match self.status:
+            case RepoStatus.OK | RepoStatus.LOADING:
+                return None
+            case RepoStatus.NO_GIT:
+                return "Git not installed"
+            case RepoStatus.NO_JJ:
+                return "Jujutsu (jj) not installed"
+            case RepoStatus.NO_GH:
+                return "GitHub CLI (gh) not installed"
+            case RepoStatus.NO_UPSTREAM:
+                return "No upstream configured"
+            case RepoStatus.DETACHED_HEAD:
+                return "Detached HEAD state"
+            case RepoStatus.WARNING:
+                return "Unknown issue"
+            case _:
+                return None
 
 
 @dataclass(frozen=True)

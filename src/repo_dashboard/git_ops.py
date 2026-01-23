@@ -49,6 +49,34 @@ async def _run_git_async(path: Path, *args: str) -> str:
     return stdout.decode().strip()
 
 
+def _is_detached_head(path: Path) -> bool:
+    """Check if repository is in detached HEAD state"""
+    try:
+        result = _run_git(path, "symbolic-ref", "-q", "HEAD")
+        return not result
+    except Exception:
+        return True
+
+
+async def _is_detached_head_async(path: Path) -> bool:
+    """Check if repository is in detached HEAD state"""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "-C",
+            str(path),
+            "symbolic-ref",
+            "-q",
+            "HEAD",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.communicate()
+        return proc.returncode != 0
+    except Exception:
+        return True
+
+
 def get_current_branch(path: Path) -> str:
     branch = _run_git(path, "rev-parse", "--abbrev-ref", "HEAD")
     return branch if branch else "HEAD"
@@ -214,6 +242,7 @@ async def get_repo_summary_async(path: Path) -> RepoSummary:
     try:
         (
             current_branch,
+            is_detached,
             (ahead, behind),
             uncommitted,
             last_modified,
@@ -221,12 +250,22 @@ async def get_repo_summary_async(path: Path) -> RepoSummary:
             worktree_count,
         ) = await asyncio.gather(
             get_current_branch_async(path),
+            _is_detached_head_async(path),
             _get_ahead_behind_async(path),
             _get_uncommitted_count_async(path),
             get_last_modified_time(path),
             get_stash_count(path),
             get_worktree_count(path),
         )
+
+        status = RepoStatus.OK
+        if is_detached:
+            status = RepoStatus.DETACHED_HEAD
+        elif ahead == 0 and behind == 0:
+            tracking = await _get_tracking_branch(path, current_branch)
+            if not tracking:
+                status = RepoStatus.NO_UPSTREAM
+
         return RepoSummary(
             path=path,
             name=path.name,
@@ -239,7 +278,22 @@ async def get_repo_summary_async(path: Path) -> RepoSummary:
             worktree_count=worktree_count,
             pr_info=None,
             last_modified=last_modified,
-            status=RepoStatus.OK,
+            status=status,
+        )
+    except FileNotFoundError:
+        return RepoSummary(
+            path=path,
+            name=path.name,
+            vcs_type="git",
+            current_branch="?",
+            ahead_count=0,
+            behind_count=0,
+            uncommitted_count=0,
+            stash_count=0,
+            worktree_count=0,
+            pr_info=None,
+            last_modified=datetime.now(),
+            status=RepoStatus.NO_GIT,
         )
     except Exception:
         return RepoSummary(

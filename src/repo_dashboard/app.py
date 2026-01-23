@@ -149,6 +149,8 @@ class RepoDashboardApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        from datetime import datetime
+
         if self.theme_name == "light":
             self.theme = "textual-light"
         else:
@@ -159,6 +161,22 @@ class RepoDashboardApp(App):
         if not self._repo_paths:
             self.notify("No git repositories found", severity="warning")
             return
+
+        for repo_path in self._repo_paths:
+            self._summaries[repo_path] = RepoSummary(
+                path=repo_path,
+                name=repo_path.name,
+                vcs_type="git",
+                current_branch="...",
+                ahead_count=0,
+                behind_count=0,
+                uncommitted_count=0,
+                stash_count=0,
+                worktree_count=0,
+                pr_info=None,
+                last_modified=datetime.now(),
+                status=RepoStatus.LOADING,
+            )
 
         self._show_repo_list_table()
         self._start_progressive_load()
@@ -278,7 +296,20 @@ class RepoDashboardApp(App):
 
         for repo_path in sorted_paths:
             summary = filtered[repo_path]
-            status_icon = "⚠ " if summary.status != RepoStatus.OK else ""
+
+            status_display = summary.status_summary
+            if summary.status == RepoStatus.LOADING:
+                status_display = "[dim]loading...[/]"
+            elif summary.warning_message:
+                status_icon = "⚠ " if summary.status == RepoStatus.WARNING else "⚠ "
+                if summary.status == RepoStatus.NO_UPSTREAM:
+                    status_icon = "⊘ "
+                elif summary.status == RepoStatus.DETACHED_HEAD:
+                    status_icon = "⊗ "
+                elif summary.status in (RepoStatus.NO_GIT, RepoStatus.NO_JJ):
+                    status_icon = "✗ "
+                status_display = f"[#ed8796]{status_icon}[/][dim]{summary.warning_message}[/]"
+
             pr_text = (
                 f"#{summary.pr_info.number}: {summary.pr_info.title}"
                 if summary.pr_info
@@ -306,7 +337,7 @@ class RepoDashboardApp(App):
             table.add_row(
                 name_with_badge,
                 colored_branch,
-                f"{status_icon}{summary.status_summary}",
+                status_display,
                 truncate(pr_text, 48),
                 format_relative_time(summary.last_modified),
                 key=str(repo_path),

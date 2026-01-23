@@ -127,6 +127,17 @@ class JJOperations:
         except Exception:
             return 0, 0
 
+    async def _check_tracking_exists(self, repo_path: Path, bookmark: str) -> bool:
+        """Check if bookmark has a tracking remote"""
+        try:
+            output = await self._run_jj_async(repo_path, "bookmark", "list")
+            for line in output.splitlines():
+                if line.strip().startswith(bookmark):
+                    return ":" in line and "@origin" in line
+            return False
+        except Exception:
+            return False
+
     async def _get_ahead_behind_async(self, repo_path: Path, bookmark: str) -> tuple[int, int]:
         """Get ahead/behind counts asynchronously"""
         try:
@@ -259,6 +270,12 @@ class JJOperations:
             except Exception:
                 last_modified = datetime.now()
 
+            status = RepoStatus.OK
+            if ahead == 0 and behind == 0 and current_bookmark != "@":
+                upstream_exists = await self._check_tracking_exists(repo_path, current_bookmark)
+                if not upstream_exists:
+                    status = RepoStatus.NO_UPSTREAM
+
             return RepoSummary(
                 path=repo_path,
                 name=repo_path.name,
@@ -271,8 +288,23 @@ class JJOperations:
                 worktree_count=worktree_count,
                 pr_info=None,
                 last_modified=last_modified,
-                status=RepoStatus.OK,
+                status=status,
                 jj_is_colocated=self._is_colocated(repo_path),
+            )
+        except FileNotFoundError:
+            return RepoSummary(
+                path=repo_path,
+                name=repo_path.name,
+                vcs_type="jj",
+                current_branch="?",
+                ahead_count=0,
+                behind_count=0,
+                uncommitted_count=0,
+                stash_count=0,
+                worktree_count=0,
+                pr_info=None,
+                last_modified=datetime.now(),
+                status=RepoStatus.NO_JJ,
             )
         except Exception:
             return RepoSummary(

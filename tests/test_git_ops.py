@@ -1,15 +1,18 @@
+import pytest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from repo_dashboard.git_ops import (
     _get_ahead_behind,
     _get_uncommitted_count,
+    _is_detached_head,
     _parse_ahead_behind,
     get_branch_list,
     get_current_branch,
     get_repo_summary,
     get_status_files,
 )
+from repo_dashboard.models import RepoStatus
 
 
 def test_get_current_branch_returns_branch_name() -> None:
@@ -175,3 +178,21 @@ def test_get_repo_summary_clean_repo_is_not_dirty() -> None:
     ):
         result = get_repo_summary(Path("/path/to/clean-repo"))
         assert result.is_dirty is False
+
+
+def test_is_detached_head_returns_true_when_detached() -> None:
+    with patch("repo_dashboard.git_ops._run_git", side_effect=Exception("not a branch")):
+        result = _is_detached_head(Path("/repo"))
+        assert result is True
+
+
+def test_is_detached_head_returns_false_when_on_branch() -> None:
+    with patch("repo_dashboard.git_ops._run_git", return_value="refs/heads/main"):
+        result = _is_detached_head(Path("/repo"))
+        assert result is False
+
+
+def test_is_detached_head_returns_true_when_empty_result() -> None:
+    with patch("repo_dashboard.git_ops._run_git", return_value=""):
+        result = _is_detached_head(Path("/repo"))
+        assert result is True
