@@ -1,6 +1,6 @@
 # Repo Dashboard - Development Guide
 
-K9s-inspired Textual TUI for managing multiple git repositories with progressive loading, filtering, and GitHub PR integration.
+K9s-inspired Textual TUI for managing multiple git and jj repositories with progressive loading, filtering, GitHub PR integration, and batch maintenance tasks.
 
 ## Project Overview
 
@@ -13,10 +13,15 @@ K9s-inspired Textual TUI for managing multiple git repositories with progressive
 ```
 src/repo_dashboard/
 ├── __main__.py      # CLI entry point
-├── app.py           # Main Textual app, UI orchestration (684 lines)
+├── app.py           # Main Textual app, UI orchestration
 ├── models.py        # Data models (RepoSummary, BranchInfo, PRInfo, etc.)
 ├── filters.py       # Filter and sort logic with fuzzy search
-├── git_ops.py       # Git command execution
+├── vcs_protocol.py  # VCS abstraction protocol
+├── vcs_git.py       # Git implementation
+├── vcs_jj.py        # Jujutsu (jj) implementation
+├── vcs_factory.py   # VCS detection and factory
+├── batch_tasks.py   # Batch operations across repos
+├── git_ops.py       # Legacy git operations (being phased out)
 ├── github_ops.py    # GitHub CLI integration
 ├── discovery.py     # Repository discovery
 ├── cache.py         # TTL-based caching
@@ -26,11 +31,16 @@ src/repo_dashboard/
 └── app.tcss         # Textual CSS styling
 
 tests/
-├── test_app.py      # App integration tests
-├── test_filters.py  # Filter/sort/search tests
-├── test_git_ops.py  # Git operations tests
-├── test_snapshots.py # Visual regression tests
-└── __snapshots__/   # SVG screenshot baselines
+├── test_app.py         # App integration tests
+├── test_filters.py     # Filter/sort/search tests
+├── test_vcs_factory.py # VCS detection and factory tests
+├── test_vcs_jj.py      # JJ operations tests
+├── test_git_ops.py     # Git operations tests
+├── test_github_ops.py  # GitHub integration tests
+├── test_batch_tasks.py # Batch task runner tests
+├── test_modals.py      # Modal component tests
+├── test_snapshots.py   # Visual regression tests
+└── __snapshots__/      # SVG screenshot baselines
 ```
 
 ## Development Environment
@@ -39,8 +49,9 @@ tests/
 
 - Python >=3.11
 - uv (Python package manager)
-- git (required for core functionality)
-- gh (GitHub CLI, optional for PR features)
+- git CLI (if managing git repos)
+- jj CLI (if managing jj repos)
+- gh (GitHub CLI, optional for PR features with both git and jj)
 
 ### Setup
 
@@ -105,6 +116,175 @@ ls tests/__snapshots__/
 3. Review the diff in `snapshot_report.html`
 4. If changes are correct: `uv run pytest tests/test_snapshots.py --snapshot-update`
 5. Commit updated snapshots: `git add tests/__snapshots__/`
+
+## VCS Support
+
+The dashboard uses a protocol-based abstraction to support multiple version control systems.
+
+### Architecture
+
+**VCS Protocol Pattern:**
+- `VCSOperations` protocol defines the interface for both read and write operations
+- `GitOperations` and `JJOperations` implement the protocol
+- `detect_vcs_type()` auto-detects VCS by directory presence (`.git` or `.jj`)
+- `get_vcs_operations()` factory returns the appropriate implementation
+- Colocated repos (both `.git` and `.jj`) prefer jj
+
+**Key Files:**
+- `vcs_protocol.py` - Protocol defining VCS operations interface
+- `vcs_git.py` - Git implementation with full protocol support
+- `vcs_jj.py` - Jujutsu implementation with full protocol support
+- `vcs_factory.py` - VCS detection and factory function
+- `batch_tasks.py` - Batch operations using VCS abstraction
+
+### Git vs JJ Concept Mapping
+
+| Concept | Git | JJ (Jujutsu) | Notes |
+|---------|-----|--------------|-------|
+| Current location | HEAD | @ (working copy) | jj always has a working copy change |
+| Branch | branch | bookmark | jj bookmarks are similar to git branches |
+| Staged changes | index/staging | N/A | jj automatically tracks all changes |
+| Uncommitted | unstaged + staged | working copy | Different mental model |
+| Commits ahead/behind | ahead/behind | ahead/behind | Similar concept |
+| Remote tracking | upstream branch | tracking bookmark | Similar |
+| Stash | stash | N/A | jj doesn't need stashing (can create changes) |
+| Worktree | worktree | workspace | Similar but jj workspaces are more powerful |
+
+### VCS Operations
+
+**Read Operations (existing):**
+- `get_repo_summary_async()` - Get repository status and metadata
+- `get_current_branch_async()` - Get current branch/bookmark name
+- `get_branch_list_async()` - List all branches/bookmarks
+- `get_stash_list()` - List stashes (git only, jj returns empty)
+- `get_worktree_list()` - List worktrees/workspaces
+- `get_commit_log()` - Get commit/change history
+
+**Write Operations (batch tasks):**
+- `fetch_all()` - Fetch from all remotes
+  - Git: `git fetch --all --prune`
+  - JJ: `jj git fetch --all-remotes`
+- `prune_remote()` - Prune stale remote branches
+  - Git: `git remote prune origin`
+  - JJ: No-op (jj handles this automatically)
+- `cleanup_merged_branches()` - Delete merged local branches/bookmarks
+  - Git: Deletes local branches merged into main
+  - JJ: Deletes bookmarks that are ancestors of main
+
+All write operations return `(success: bool, message: str)` for UI feedback.
+
+### GitHub CLI Integration
+
+GitHub integration works for both git and jj repositories via the `gh` CLI:
+
+- For git repos: Uses standard git directory
+- For jj repos (non-colocated): Sets `GIT_DIR` environment variable to `.jj/repo/store/git`
+- For jj repos (colocated): Uses `.git` directory like standard git repos
+
+The `get_github_env()` helper in `vcs_factory.py` handles this transparently.
+
+## Batch Tasks
+
+Batch operations execute maintenance tasks across multiple repositories simultaneously.
+
+### Architecture
+
+**BatchTaskRunner:**
+- Runs async tasks sequentially across filtered repositories
+- Uses VCS factory to get appropriate operations for each repo
+- Tracks progress and duration for each operation
+- Handles errors gracefully (continues on failure)
+
+**BatchTaskModal:**
+- Real-time progress bar showing completion
+- Results table with columns: Repository, Status, Message, Time
+- Color-coded status icons (✓ green for success, ✗ red for failure)
+- Scrollable results for large repository sets
+
+### Adding a New Batch Task
+
+1. Add async method to `VCSOperations` protocol (vcs_protocol.py)
+   ```python
+   async def new_operation(self, repo_path: Path) -> tuple[bool, str]:
+       """Description of operation"""
+       ...
+   ```
+
+2. Implement in both `GitOperations` and `JJOperations`
+   ```python
+   # vcs_git.py
+   async def new_operation(self, repo_path: Path) -> tuple[bool, str]:
+       # Git-specific implementation
+       ...
+
+   # vcs_jj.py
+   async def new_operation(self, repo_path: Path) -> tuple[bool, str]:
+       # JJ-specific implementation
+       ...
+   ```
+
+3. Create task function in `batch_tasks.py`
+   ```python
+   async def task_new_operation(
+       vcs_ops: VCSOperations, repo_path: Path
+   ) -> tuple[bool, str]:
+       return await vcs_ops.new_operation(repo_path)
+   ```
+
+4. Add action method to `app.py`
+   ```python
+   def action_batch_new_operation(self) -> None:
+       from repo_dashboard.batch_tasks import task_new_operation
+       from repo_dashboard.filters import filter_repos_multi
+
+       if self._current_view != "repo_list":
+           self.notify("Batch tasks only available in repo list view", severity="warning")
+           return
+
+       filtered = filter_repos_multi(self._summaries, self._active_filters, self._search_text)
+       filtered_repos = list(filtered.values())
+       if not filtered_repos:
+           self.notify("No repositories for operation", severity="warning")
+           return
+
+       self.push_screen(
+           BatchTaskModal("Operation Name", task_new_operation, filtered_repos)
+       )
+   ```
+
+5. Add keybinding to BINDINGS list
+   ```python
+   Binding("N", "batch_new_operation", "New Operation", show=False)
+   ```
+
+6. Update help modal text in `modals.py`
+   ```python
+   [bold]Batch Tasks[/]
+   F             Fetch all (filtered repos)
+   P             Prune remote (filtered repos)
+   C             Cleanup merged branches (filtered repos)
+   N             New operation (filtered repos)
+   ```
+
+7. Add tests to `tests/test_batch_tasks.py`
+
+### Safety Considerations
+
+**Read-Only by Default:**
+- All existing functionality remains read-only
+- Write operations require explicit user action (keybinding)
+
+**Batch Task Safety:**
+- Only operate on currently filtered repos (explicit scope)
+- Progress feedback shows results incrementally
+- Failures highlighted but don't stop batch execution
+- Modal display provides confirmation before operations begin
+
+**JJ-Specific Considerations:**
+- Non-colocated repos require GIT_DIR for gh CLI (handled automatically)
+- jj operations are generally safer (immutable history)
+- Some git concepts don't map to jj (stash, staged changes)
+- jj has more powerful undo capabilities
 
 ## Code Style
 
@@ -313,16 +493,25 @@ Refresh with `r` clears all caches.
 
 ## External Dependencies
 
-### Required
+### Required (VCS-specific)
 
-- **git** - Core functionality depends on git CLI
+- **git** - For managing git repositories
   - Used for: status, branch list, commits, stashes, worktrees
   - Assumes git is in PATH
+  - Not needed if only managing jj repos
+
+- **jj** - For managing jujutsu repositories
+  - Used for: status, bookmark list, changes, workspaces
+  - Assumes jj is in PATH
+  - Not needed if only managing git repos
+  - Install: See https://github.com/martinvonz/jj
 
 ### Optional
 
-- **gh** (GitHub CLI) - PR features require this
+- **gh** (GitHub CLI) - PR features for both git and jj repos
   - Used for: fetching PR info, check status, PR details
+  - Works with both git and jj repositories
+  - For non-colocated jj repos: automatically sets GIT_DIR
   - If missing: PR columns show "—" instead of failing
   - Install: `brew install gh` (macOS) or see https://cli.github.com/
 
@@ -374,7 +563,8 @@ self.notify("User message")  # Shows as notification in app
 
 1. Run full test suite: `uv run pytest -v`
 2. Verify snapshots are current
-3. Test manually with real repositories
-4. Update version in `pyproject.toml`
-5. Update `README.md` if features changed
-6. Run with both light and dark themes
+3. Test manually with real repositories (both git and jj if available)
+4. Test batch operations (fetch, prune, cleanup)
+5. Update version in `pyproject.toml`
+6. Update `README.md` if features changed
+7. Run with both light and dark themes

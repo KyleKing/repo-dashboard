@@ -320,3 +320,145 @@ async def test_vcs_badge_display_with_mixed_repos(tmp_path: Path) -> None:
 
         assert colocated_summary is not None
         assert colocated_summary.vcs_type == "jj"
+
+
+@pytest.mark.asyncio
+async def test_batch_fetch_workflow(tmp_repos: list[Path]) -> None:
+    """Test full batch fetch workflow: filter → execute batch operation"""
+    app = RepoDashboardApp(
+        scan_paths=[tmp_repos[0].parent],
+        scan_depth=1,
+        theme="dark",
+    )
+
+    summary1 = _make_summary(tmp_repos[0], ahead=2)
+    summary2 = _make_summary(tmp_repos[1], behind=1)
+
+    from repo_dashboard.vcs_git import GitOperations
+    mock_vcs = GitOperations()
+    mock_vcs.fetch_all = AsyncMock(return_value=(True, "Fetched successfully"))
+
+    with patch("repo_dashboard.app.get_vcs_operations", return_value=mock_vcs):
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._summaries[tmp_repos[0]] = summary1
+            app._summaries[tmp_repos[1]] = summary2
+            app._refresh_table_with_filters()
+            await pilot.pause()
+
+            await pilot.press("f")
+            await pilot.press("a")
+            await pilot.pause()
+
+            assert app._current_view == "repo_list"
+
+            await pilot.press("F")
+            await pilot.pause()
+
+
+@pytest.mark.asyncio
+async def test_batch_operation_not_available_in_detail_view(tmp_repos: list[Path]) -> None:
+    """Test that batch operations show warning in detail view"""
+    app = RepoDashboardApp(
+        scan_paths=[tmp_repos[0].parent],
+        scan_depth=1,
+        theme="dark",
+    )
+
+    summary = _make_summary(tmp_repos[0])
+
+    from repo_dashboard.vcs_git import GitOperations
+    mock_vcs = GitOperations()
+    mock_vcs.get_branch_list_async = AsyncMock(return_value=[])
+    mock_vcs.get_stash_list = AsyncMock(return_value=[])
+    mock_vcs.get_worktree_list = AsyncMock(return_value=[])
+
+    with patch("repo_dashboard.app.get_vcs_operations", return_value=mock_vcs):
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._summaries[tmp_repos[0]] = summary
+            app._show_repo_detail_view(tmp_repos[0])
+            await pilot.pause()
+
+            assert app._current_view == "repo_detail"
+
+            app.action_batch_fetch()
+            await pilot.pause()
+
+
+@pytest.mark.asyncio
+async def test_batch_operation_with_no_repos(tmp_path: Path) -> None:
+    """Test batch operation with no filtered repos shows warning"""
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+
+    app = RepoDashboardApp(
+        scan_paths=[empty_dir],
+        scan_depth=1,
+        theme="dark",
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        assert app._current_view == "repo_list"
+
+        app.action_batch_fetch()
+        await pilot.pause()
+
+
+@pytest.mark.asyncio
+async def test_error_handling_in_repo_discovery(tmp_path: Path) -> None:
+    """Test error handling when repo discovery encounters issues"""
+    normal_repo = tmp_path / "normal"
+    normal_repo.mkdir()
+    (normal_repo / ".git").mkdir()
+
+    app = RepoDashboardApp(
+        scan_paths=[tmp_path],
+        scan_depth=1,
+        theme="dark",
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        assert len(app._summaries) == 1
+        assert normal_repo in app._summaries
+
+
+@pytest.mark.asyncio
+async def test_navigation_between_views(tmp_repos: list[Path]) -> None:
+    """Test navigation: list → detail → back to list"""
+    app = RepoDashboardApp(
+        scan_paths=[tmp_repos[0].parent],
+        scan_depth=1,
+        theme="dark",
+    )
+
+    summary = _make_summary(tmp_repos[0])
+
+    from repo_dashboard.vcs_git import GitOperations
+    mock_vcs = GitOperations()
+    mock_vcs.get_branch_list_async = AsyncMock(return_value=[])
+    mock_vcs.get_stash_list = AsyncMock(return_value=[])
+    mock_vcs.get_worktree_list = AsyncMock(return_value=[])
+
+    with patch("repo_dashboard.app.get_vcs_operations", return_value=mock_vcs):
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app._summaries[tmp_repos[0]] = summary
+            app._refresh_table_with_filters()
+            await pilot.pause()
+
+            assert app._current_view == "repo_list"
+
+            app._show_repo_detail_view(tmp_repos[0])
+            await pilot.pause()
+
+            assert app._current_view == "repo_detail"
+
+            await pilot.press("escape")
+            await pilot.pause()
+
+            assert app._current_view == "repo_list"

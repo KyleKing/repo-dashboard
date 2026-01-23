@@ -5,7 +5,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import LoadingIndicator, Static
+from textual.widgets import DataTable, LoadingIndicator, ProgressBar, Static
 
 from repo_dashboard.models import ActiveFilter, CommitInfo, FilterMode, PRDetail, SortMode
 
@@ -748,8 +748,6 @@ class BatchTaskModal(ModalScreen):
         self._total = len(repos)
 
     def compose(self) -> ComposeResult:
-        from textual.widgets import DataTable, ProgressBar
-
         with Vertical(classes="batch-task-modal-container"):
             yield Static(
                 f"[bold]{self.task_name}[/]",

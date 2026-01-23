@@ -2,7 +2,7 @@
 
 ![.github/assets/demo.gif](https://raw.githubusercontent.com/kyleking/wip-reda/main/.github/assets/demo.gif)
 
-K9s-inspired TUI for managing multiple git repositories.
+K9s-inspired TUI for managing multiple git and jj repositories with GitHub PR integration.
 
 ## Usage
 
@@ -20,6 +20,19 @@ uv run reda --depth 2 ~/Developer
 uv run reda --theme light
 ```
 
+## Supported Version Control Systems
+
+- **Git**: Full support for git repositories
+- **Jujutsu (jj)**: Full support for jj repositories (both colocated and non-colocated)
+
+The dashboard automatically detects the VCS type and uses appropriate operations. Colocated repositories (having both `.git` and `.jj`) are treated as jj repositories.
+
+**Requirements:**
+- Python >=3.11
+- git CLI (if managing git repos)
+- jj CLI (if managing jj repos)
+- gh CLI (GitHub CLI) - optional, for PR features with both git and jj repos
+
 ## Keybindings
 
 ### Navigation
@@ -31,24 +44,73 @@ uv run reda --theme light
 ### Actions
 - `o` - Open PR in browser
 - `c` - Copy (branch/PR/path)
-- `f` - Cycle filter mode
-- `s` - Cycle sort mode
+- `f` - Filter popup (multiple filters, AND logic)
+- `s` - Sort popup
 - `r` - Refresh all data
 - `?` - Show help
 - `q` - Quit
 
+### Batch Tasks
+- `F` - Fetch all (filtered repos)
+- `P` - Prune remote branches (filtered repos, git only)
+- `C` - Cleanup merged branches (filtered repos)
+
 ## Features
 
-- Progressive loading - data loads as it becomes available
-- TTL caching for PR information and git operations
-- Filter modes: all/dirty/ahead/behind/has_pr/has_stash
-- Sort modes: name/modified/status/branch
-- Git worktree detection
-- Stash tracking
-- Breadcrumb navigation with status badges
-- Vim-style keybindings
-- Help modal with all keybindings
-- Catppuccin themes (dark/light)
+### Core Functionality
+- **Multi-VCS Support**: Works with both git and jj repositories
+- **Progressive Loading**: Data loads asynchronously as it becomes available
+- **TTL Caching**: Intelligent caching for PR information and VCS operations
+- **GitHub Integration**: Pull request info and status checks via gh CLI
+
+### Filtering & Sorting
+- **Multi-Filter Support**: Combine multiple filters with AND logic
+- **Filter Modes**: all, dirty, ahead, behind, has_pr, has_stash
+- **Sort Modes**: name, modified, status, branch (all reversible)
+- **Fuzzy Search**: Real-time search with similarity matching
+
+### Repository Management
+- **Batch Operations**: Fetch, prune, and cleanup across filtered repositories
+- **Worktree Detection**: Git worktrees and jj workspaces
+- **Stash Tracking**: Git stash monitoring (jj doesn't use stashes)
+- **Branch Details**: View branches, PRs, commits, and modified files
+
+### User Experience
+- **Vim-Style Keybindings**: Familiar navigation patterns
+- **Breadcrumb Navigation**: Context-aware status badges
+- **Help Modal**: Complete keybinding reference
+- **Catppuccin Themes**: Dark and light themes with minimal color usage
+
+## Batch Operations
+
+Perform maintenance tasks across multiple repositories simultaneously:
+
+### Fetch All (`F`)
+Updates remote refs for all filtered repositories.
+- **Git**: `git fetch --all --prune`
+- **JJ**: `jj git fetch --all-remotes`
+
+### Prune Remote (`P`)
+Cleans up stale remote branch references.
+- **Git**: `git remote prune origin`
+- **JJ**: No-op (jj handles this automatically during fetch)
+
+### Cleanup Merged Branches (`C`)
+Deletes local branches/bookmarks that have been merged into main/master.
+- **Git**: Deletes local branches merged into main
+- **JJ**: Deletes bookmarks that are ancestors of main
+
+**Usage:**
+1. Apply filters to select repositories (e.g., filter by "dirty" or search for specific repos)
+2. Press `F`, `P`, or `C` to run the batch operation
+3. View real-time progress and results in the modal
+4. Operations run sequentially across all filtered repositories
+
+**Safety:**
+- Batch operations only work in the repository list view
+- Only operate on currently filtered/visible repositories
+- Each operation shows success/failure status with detailed messages
+- Failed operations don't stop the batch (continues to next repo)
 
 ## Development
 

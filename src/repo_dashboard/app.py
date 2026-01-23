@@ -863,12 +863,14 @@ class RepoDashboardApp(App):
     def action_batch_fetch(self) -> None:
         """Fetch all filtered repositories"""
         from repo_dashboard.batch_tasks import task_fetch_all
+        from repo_dashboard.filters import filter_repos_multi
 
         if self._current_view != "repo_list":
             self.notify("Batch tasks only available in repo list view", severity="warning")
             return
 
-        filtered_repos = list(self._get_filtered_repos().values())
+        filtered = filter_repos_multi(self._summaries, self._active_filters, self._search_text)
+        filtered_repos = list(filtered.values())
         if not filtered_repos:
             self.notify("No repositories to fetch", severity="warning")
             return
@@ -880,12 +882,14 @@ class RepoDashboardApp(App):
     def action_batch_prune(self) -> None:
         """Prune remote for all filtered repositories"""
         from repo_dashboard.batch_tasks import task_prune_remote
+        from repo_dashboard.filters import filter_repos_multi
 
         if self._current_view != "repo_list":
             self.notify("Batch tasks only available in repo list view", severity="warning")
             return
 
-        filtered_repos = list(self._get_filtered_repos().values())
+        filtered = filter_repos_multi(self._summaries, self._active_filters, self._search_text)
+        filtered_repos = list(filtered.values())
         if not filtered_repos:
             self.notify("No repositories to prune", severity="warning")
             return
@@ -897,12 +901,14 @@ class RepoDashboardApp(App):
     def action_batch_cleanup(self) -> None:
         """Cleanup merged branches for all filtered repositories"""
         from repo_dashboard.batch_tasks import task_cleanup_merged
+        from repo_dashboard.filters import filter_repos_multi
 
         if self._current_view != "repo_list":
             self.notify("Batch tasks only available in repo list view", severity="warning")
             return
 
-        filtered_repos = list(self._get_filtered_repos().values())
+        filtered = filter_repos_multi(self._summaries, self._active_filters, self._search_text)
+        filtered_repos = list(filtered.values())
         if not filtered_repos:
             self.notify("No repositories to cleanup", severity="warning")
             return
