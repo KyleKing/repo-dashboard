@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 from repo_dashboard.models import PRDetail, PRInfo
+from repo_dashboard.vcs_factory import get_github_env, get_vcs_operations
 
 
 def _get_checks_status(rollup: list | None) -> str | None:
@@ -41,6 +42,9 @@ def _parse_pr_response(stdout: str) -> PRInfo | None:
 
 
 def get_pr_for_branch(path: Path, branch: str) -> PRInfo | None:
+    vcs_ops = get_vcs_operations(path)
+    env = get_github_env(vcs_ops, path)
+
     result = subprocess.run(
         [
             "gh",
@@ -51,6 +55,7 @@ def get_pr_for_branch(path: Path, branch: str) -> PRInfo | None:
             "number,title,url,state,statusCheckRollup",
         ],
         cwd=path,
+        env=env,
         capture_output=True,
         text=True,
     )
@@ -61,6 +66,9 @@ def get_pr_for_branch(path: Path, branch: str) -> PRInfo | None:
 
 
 async def get_pr_for_branch_async(path: Path, branch: str) -> PRInfo | None:
+    vcs_ops = get_vcs_operations(path)
+    env = get_github_env(vcs_ops, path)
+
     proc = await asyncio.create_subprocess_exec(
         "gh",
         "pr",
@@ -69,6 +77,7 @@ async def get_pr_for_branch_async(path: Path, branch: str) -> PRInfo | None:
         "--json",
         "number,title,url,state,statusCheckRollup",
         cwd=path,
+        env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -82,6 +91,9 @@ async def get_pr_for_branch_async(path: Path, branch: str) -> PRInfo | None:
 
 async def get_pr_detail(path: Path, branch: str) -> PRDetail | None:
     """Get extended PR details including description and comments"""
+    vcs_ops = get_vcs_operations(path)
+    env = get_github_env(vcs_ops, path)
+
     proc = await asyncio.create_subprocess_exec(
         "gh",
         "pr",
@@ -90,6 +102,7 @@ async def get_pr_detail(path: Path, branch: str) -> PRDetail | None:
         "--json",
         "number,title,url,state,statusCheckRollup,body,comments,additions,deletions",
         cwd=path,
+        env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )

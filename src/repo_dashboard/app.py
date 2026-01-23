@@ -214,6 +214,7 @@ class RepoDashboardApp(App):
                 summary = RepoSummary(
                     path=summary.path,
                     name=summary.name,
+                    vcs_type=summary.vcs_type,
                     current_branch=summary.current_branch,
                     ahead_count=summary.ahead_count,
                     behind_count=summary.behind_count,
@@ -231,6 +232,7 @@ class RepoDashboardApp(App):
                     summary = RepoSummary(
                         path=summary.path,
                         name=summary.name,
+                        vcs_type=summary.vcs_type,
                         current_branch=summary.current_branch,
                         ahead_count=summary.ahead_count,
                         behind_count=summary.behind_count,

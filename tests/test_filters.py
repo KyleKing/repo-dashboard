@@ -51,6 +51,7 @@ def _make_summary(
     return RepoSummary(
         path=Path(f"/tmp/{name}"),
         name=name,
+        vcs_type="git",
         current_branch=branch,
         ahead_count=ahead,
         behind_count=behind,

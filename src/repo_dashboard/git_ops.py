@@ -197,6 +197,7 @@ def get_repo_summary(path: Path) -> RepoSummary:
     return RepoSummary(
         path=path,
         name=path.name,
+        vcs_type="git",
         current_branch=get_current_branch(path),
         ahead_count=ahead,
         behind_count=behind,
@@ -229,6 +230,7 @@ async def get_repo_summary_async(path: Path) -> RepoSummary:
         return RepoSummary(
             path=path,
             name=path.name,
+            vcs_type="git",
             current_branch=current_branch,
             ahead_count=ahead,
             behind_count=behind,
@@ -243,6 +245,7 @@ async def get_repo_summary_async(path: Path) -> RepoSummary:
         return RepoSummary(
             path=path,
             name=path.name,
+            vcs_type="git",
             current_branch="?",
             ahead_count=0,
             behind_count=0,
@@ -278,12 +281,16 @@ async def get_worktree_list(path: Path) -> list[WorktreeInfo]:
 
     worktrees = []
     current = {}
+    worktree_index = 0
 
     for line in output.splitlines():
         if line.startswith("worktree "):
             if current:
-                worktrees.append(_parse_worktree(current))
+                worktrees.append(_parse_worktree(current, is_main=(worktree_index == 0)))
+                worktree_index += 1
             current = {"path": line.split(" ", 1)[1]}
+        elif line.startswith("HEAD "):
+            current["commit"] = line.split(" ", 1)[1]
         elif line.startswith("branch "):
             current["branch"] = line.split(" ", 1)[1].replace("refs/heads/", "")
         elif line.startswith("detached"):
@@ -292,17 +299,19 @@ async def get_worktree_list(path: Path) -> list[WorktreeInfo]:
             current["locked"] = True
 
     if current:
-        worktrees.append(_parse_worktree(current))
+        worktrees.append(_parse_worktree(current, is_main=(worktree_index == 0)))
 
     result = worktrees[1:] if len(worktrees) > 1 else []
     commit_cache.set(cache_key, result)
     return result
 
 
-def _parse_worktree(data: dict) -> WorktreeInfo:
+def _parse_worktree(data: dict, is_main: bool = False) -> WorktreeInfo:
     return WorktreeInfo(
         path=Path(data["path"]),
-        branch=data.get("branch", ""),
+        branch=data.get("branch"),
+        commit=data.get("commit"),
+        is_main=is_main,
         is_detached=data.get("detached", False),
         is_locked=data.get("locked", False),
     )

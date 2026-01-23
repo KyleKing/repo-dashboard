@@ -4,18 +4,31 @@ from subprocess import CompletedProcess
 from unittest.mock import patch
 
 from repo_dashboard.github_ops import _get_checks_status, get_pr_for_branch
+from repo_dashboard.vcs_git import GitOperations
 
 
 def test_get_pr_for_branch_returns_none_on_failure() -> None:
     result = CompletedProcess(args=[], returncode=1, stdout="", stderr="")
-    with patch("repo_dashboard.github_ops.subprocess.run", return_value=result):
+    with (
+        patch("repo_dashboard.github_ops.subprocess.run", return_value=result),
+        patch(
+            "repo_dashboard.github_ops.get_vcs_operations",
+            return_value=GitOperations(),
+        ),
+    ):
         pr = get_pr_for_branch(Path("/repo"), "main")
         assert pr is None
 
 
 def test_get_pr_for_branch_returns_none_on_invalid_json() -> None:
     result = CompletedProcess(args=[], returncode=0, stdout="not json", stderr="")
-    with patch("repo_dashboard.github_ops.subprocess.run", return_value=result):
+    with (
+        patch("repo_dashboard.github_ops.subprocess.run", return_value=result),
+        patch(
+            "repo_dashboard.github_ops.get_vcs_operations",
+            return_value=GitOperations(),
+        ),
+    ):
         pr = get_pr_for_branch(Path("/repo"), "main")
         assert pr is None
 
@@ -31,7 +44,13 @@ def test_get_pr_for_branch_parses_pr_info() -> None:
     result = CompletedProcess(
         args=[], returncode=0, stdout=json.dumps(pr_data), stderr=""
     )
-    with patch("repo_dashboard.github_ops.subprocess.run", return_value=result):
+    with (
+        patch("repo_dashboard.github_ops.subprocess.run", return_value=result),
+        patch(
+            "repo_dashboard.github_ops.get_vcs_operations",
+            return_value=GitOperations(),
+        ),
+    ):
         pr = get_pr_for_branch(Path("/repo"), "main")
         assert pr is not None
         assert pr.number == 123
@@ -52,7 +71,13 @@ def test_get_pr_for_branch_handles_no_status_checks() -> None:
     result = CompletedProcess(
         args=[], returncode=0, stdout=json.dumps(pr_data), stderr=""
     )
-    with patch("repo_dashboard.github_ops.subprocess.run", return_value=result):
+    with (
+        patch("repo_dashboard.github_ops.subprocess.run", return_value=result),
+        patch(
+            "repo_dashboard.github_ops.get_vcs_operations",
+            return_value=GitOperations(),
+        ),
+    ):
         pr = get_pr_for_branch(Path("/repo"), "feature")
         assert pr is not None
         assert pr.checks_status is None

@@ -1,6 +1,11 @@
 from pathlib import Path
 
 
+def _is_repo_root(path: Path) -> bool:
+    """Check if directory is a VCS repository root (git or jj)"""
+    return (path / ".git").is_dir() or (path / ".jj").is_dir()
+
+
 def discover_git_repos(base_paths: list[Path], max_depth: int) -> list[Path]:
     """Discover git repositories up to max_depth"""
     repos: set[Path] = set()
@@ -9,7 +14,7 @@ def discover_git_repos(base_paths: list[Path], max_depth: int) -> list[Path]:
         if not base_path.exists() or not base_path.is_dir():
             continue
 
-        if (base_path / ".git").exists():
+        if _is_repo_root(base_path):
             repos.add(base_path)
             continue
 
@@ -32,7 +37,7 @@ def _discover_recursive(
             if not item.is_dir() or item.name.startswith("."):
                 continue
 
-            if (item / ".git").exists():
+            if _is_repo_root(item):
                 repos.add(item)
             else:
                 _discover_recursive(item, max_depth, current_depth + 1, repos)

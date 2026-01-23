@@ -2,6 +2,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
+
+VCSType = Literal["git", "jj"]
 
 
 class ItemKind(StrEnum):
@@ -64,6 +67,7 @@ class SortMode(StrEnum):
 class RepoSummary:
     path: Path
     name: str
+    vcs_type: VCSType
     current_branch: str
     ahead_count: int
     behind_count: int
@@ -73,6 +77,8 @@ class RepoSummary:
     pr_info: "PRInfo | None"
     last_modified: datetime
     status: RepoStatus
+    jj_is_colocated: bool | None = None
+    jj_working_copy_id: str | None = None
 
     @property
     def is_dirty(self) -> bool:
@@ -200,7 +206,11 @@ class StashDetail:
 
 @dataclass(frozen=True)
 class WorktreeInfo:
+    """Git worktree or JJ workspace information"""
+
     path: Path
-    branch: str
-    is_detached: bool
-    is_locked: bool
+    branch: str | None
+    commit: str | None
+    is_main: bool
+    is_detached: bool = False
+    is_locked: bool = False
