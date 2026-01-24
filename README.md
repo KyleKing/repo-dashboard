@@ -112,6 +112,26 @@ Deletes local branches/bookmarks that have been merged into main/master.
 - Each operation shows success/failure status with detailed messages
 - Failed operations don't stop the batch (continues to next repo)
 
+## Planned Features
+
+### Oh-My-Posh Integration
+
+CLI command to expose current PR information for shell prompt integration:
+
+```sh
+# Example usage in oh-my-posh prompt segment
+reda pr-info --format=json
+```
+
+**Features:**
+- Read PR name/number from cached data for current repository
+- Fast response time (cache-only, no API calls)
+- JSON output for easy parsing by prompt engines
+- Display PR status, title, and checks in shell prompt
+- Configurable output format (json, text, template)
+
+**Use case:** Show current PR context directly in your shell prompt without slowing down prompt rendering. Uses the existing TTL cache infrastructure to avoid GitHub API rate limits.
+
 ## Development
 
 ### Running Tests
@@ -184,3 +204,54 @@ vhs < .github/assets/demo.tape
 ```
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for more details on VHS setup and recording.
+
+## Alternatives
+
+### Multi-Repository TUIs
+
+**[Git-Scope](https://github.com/Bharath-code/git-scope)** - The most similar tool to repo-dashboard, built with Bubble Tea (Go) instead of Textual (Python).
+
+**Comparison with Git-Scope:**
+
+| Feature | repo-dashboard | Git-Scope |
+|---------|---------------|-----------|
+| **Language** | Python (Textual) | Go (Bubble Tea) |
+| **VCS Support** | Git + Jujutsu (jj) | Git only |
+| **Startup Time** | ~100-500ms | ~10ms (cached) |
+| **GitHub Integration** | PR details, checks, status via gh CLI | Contribution graphs |
+| **Filtering** | 6 modes (dirty, ahead, behind, has_pr, has_stash, all) | Dirty filter + pagination |
+| **Batch Operations** | Fetch all, prune remote, cleanup merged branches | None |
+| **Search** | Fuzzy search with 0.6 similarity threshold | Fuzzy search by name/path/branch |
+| **Additional Features** | Worktrees/workspaces, stash tracking, PR opening | Editor launch (VSCode/Vim/etc), disk usage, timeline view |
+| **Workspace Switching** | Via CLI arguments | In-app with `w` key |
+| **Theme** | Catppuccin (dark/light) | GitHub-style |
+
+**Choose Git-Scope if you:**
+- Prefer faster startup times (Go performance)
+- Need editor integration (direct launch to VSCode, Neovim, etc.)
+- Want contribution graphs and timeline views
+- Work exclusively with Git repositories
+
+**Choose repo-dashboard if you:**
+- Use Jujutsu (jj) or mixed Git/jj workflows
+- Need GitHub PR integration and status checks
+- Want batch maintenance operations (fetch, prune, cleanup)
+- Prefer worktree/workspace management
+- Work with stashes regularly
+
+### Other Multi-Repository Tools
+
+- **[Gita](https://github.com/nosarthur/gita)** - CLI tool to manage multiple git repositories with custom groups and batch operations
+- **[gitbatch](https://github.com/isacikgoz/gitbatch)** - Manage your git repositories in one place with interactive TUI
+- **[mgitstatus](https://github.com/fboender/multi-git-status)** - Show uncommitted, untracked, and unpushed changes for multiple repos
+- **[mu-repo](https://github.com/fabioz/mu-repo)** - Tool to help in dealing with multiple git repositories
+- **[RepoBar](https://github.com/steipete/RepoBar)** - macOS menu bar app for monitoring GitHub repositories with CI status, activity preview, and local git integration
+
+### Single-Repository TUIs
+
+Terminal UIs focused on managing individual repositories (different use case):
+
+- **[lazygit](https://github.com/jesseduffield/lazygit)** - Simple terminal UI for git commands with keyboard-driven interface and wide feature coverage
+- **[GitUI](https://github.com/extrawurst/gitui)** - Blazing fast terminal UI for git written in Rust
+- **[Gitu](https://github.com/altsem/gitu)** - TUI Git client inspired by Magit
+- **[Neogit](https://github.com/NeogitOrg/neogit)** - Magit for Neovim

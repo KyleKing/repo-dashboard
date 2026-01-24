@@ -4,6 +4,18 @@ K9s-inspired Textual TUI for managing multiple git and jj repositories with prog
 
 ## Project Overview
 
+**Positioning:** Multi-repository TUI focusing on multi-VCS support (Git + Jujutsu), GitHub PR integration, and batch maintenance operations. Most similar to [Git-Scope](https://github.com/Bharath-code/git-scope), but differentiated by:
+- Multi-VCS support (Git + Jujutsu vs Git-only)
+- GitHub PR integration with detailed status checks
+- Batch operations (fetch, prune, cleanup merged branches)
+- Worktree/workspace and stash management
+- Built with Textual (Python) vs Bubble Tea (Go)
+
+**Trade-offs:**
+- Slower startup (~100-500ms vs ~10ms for Git-Scope) due to Python vs Go
+- More features but higher complexity
+- Broader VCS support but more maintenance surface
+
 **Framework:** Textual (Python TUI framework)
 **Theme:** Catppuccin Macchiato
 **Design Philosophy:** Minimal color, single unified background, borders for hierarchy, vim-style keybindings
@@ -558,6 +570,45 @@ self.notify("User message")  # Shows as notification in app
 - TTL caching reduces redundant git/GitHub operations
 - Workers run concurrently for parallel data loading
 - Table virtualization (Textual handles this) for large lists
+
+## Planned Features
+
+### Oh-My-Posh Integration
+
+Add CLI command for shell prompt integration to display PR information:
+
+**Command:**
+```bash
+reda pr-info [--format=json|text|template]
+```
+
+**Implementation Requirements:**
+- Read PR data from existing cache (cache.py)
+- Detect current repository from working directory
+- Return PR number, title, and status without API calls
+- Fast response time (<50ms) for prompt rendering
+- JSON output for parsing by prompt engines
+- Template support for custom formatting
+
+**Architecture:**
+- Add new CLI command to `__main__.py`
+- Reuse `PRCache` from `cache.py`
+- Detect VCS type and get current branch
+- Look up cached PR info for `{upstream}:{branch}` key
+- Return empty/error state if no cache or not in repo
+
+**Use Case:**
+Users can display current PR context in their shell prompt without slowing down prompt rendering. This complements the TUI by providing at-a-glance PR info without launching the full application.
+
+**Output Formats:**
+- `json`: `{"number": 123, "title": "Feature X", "state": "OPEN", "checks": "passing"}`
+- `text`: `#123: Feature X [✓]`
+- `template`: User-defined Go template string
+
+**Error Handling:**
+- Not in repository: exit silently (no output)
+- No cached data: exit silently or show placeholder
+- Invalid cache: attempt refresh or show stale indicator
 
 ## Release Checklist
 
