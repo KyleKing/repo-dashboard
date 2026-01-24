@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from repo_dashboard.models import PRDetail, PRInfo
+from repo_dashboard.models import PRDetail, PRInfo, WorkflowRun, WorkflowSummary
 from repo_dashboard.vcs_factory import get_github_env, get_vcs_operations
 
 
@@ -132,3 +132,94 @@ async def get_pr_detail(path: Path, branch: str) -> PRDetail | None:
         additions=data.get("additions", 0),
         deletions=data.get("deletions", 0),
     )
+
+
+async def get_workflow_runs_for_commit(path: Path, commit_sha: str) -> WorkflowSummary | None:
+    """Get workflow runs for a specific commit SHA"""
+    from datetime import datetime
+
+    vcs_ops = get_vcs_operations(path)
+    env = get_github_env(vcs_ops, path)
+
+    proc = await asyncio.create_subprocess_exec(
+        "gh",
+        "run",
+        "list",
+        "--commit",
+        commit_sha,
+        "--json",
+        "status,conclusion,headSha,name,workflowName,databaseId,createdAt,url",
+        "--limit",
+        "100",
+        cwd=path,
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await proc.communicate()
+
+    if proc.returncode != 0:
+        return None
+
+    try:
+        runs_data = json.loads(stdout.decode())
+    except json.JSONDecodeError:
+        return None
+
+    if not runs_data:
+        return None
+
+    workflow_runs = []
+    success_count = 0
+    failure_count = 0
+    skipped_count = 0
+    pending_count = 0
+
+    for run in runs_data:
+        status = run.get("status", "").lower()
+        conclusion = run.get("conclusion", "").lower() if run.get("conclusion") else None
+
+        try:
+            created_at = datetime.fromisoformat(run["createdAt"].replace("Z", "+00:00"))
+        except (ValueError, KeyError):
+            created_at = datetime.now()
+
+        workflow_run = WorkflowRun(
+            workflow_name=run.get("workflowName") or run.get("name", "Unknown"),
+            run_id=run.get("databaseId", 0),
+            status=status,
+            conclusion=conclusion,
+            created_at=created_at,
+            html_url=run.get("url", ""),
+        )
+        workflow_runs.append(workflow_run)
+
+        if status == "completed":
+            if conclusion == "success":
+                success_count += 1
+            elif conclusion in ("failure", "timed_out", "action_required"):
+                failure_count += 1
+            elif conclusion == "skipped":
+                skipped_count += 1
+        else:
+            pending_count += 1
+
+    return WorkflowSummary(
+        success_count=success_count,
+        failure_count=failure_count,
+        skipped_count=skipped_count,
+        pending_count=pending_count,
+        runs=workflow_runs,
+    )
+
+
+async def get_workflow_runs_for_branch(path: Path, branch: str) -> WorkflowSummary | None:
+    """Get workflow runs for the latest commit on a branch"""
+    vcs_ops = get_vcs_operations(path)
+
+    commit_sha = await vcs_ops.get_commit_sha(path, branch)
+    if not commit_sha:
+        return None
+
+    return await get_workflow_runs_for_commit(path, commit_sha)
+

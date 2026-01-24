@@ -30,3 +30,4 @@ class TTLCache:
 pr_cache = TTLCache(ttl_minutes=5)
 branch_cache = TTLCache(ttl_minutes=2)
 commit_cache = TTLCache(ttl_minutes=5)
+workflow_cache = TTLCache(ttl_minutes=5)

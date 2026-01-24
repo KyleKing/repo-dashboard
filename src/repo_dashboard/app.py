@@ -9,9 +9,9 @@ from textual.containers import Container, Vertical
 from textual.events import Key
 from textual.widgets import DataTable, Footer, Static
 
-from repo_dashboard.cache import branch_cache, commit_cache, pr_cache
+from repo_dashboard.cache import branch_cache, commit_cache, pr_cache, workflow_cache
 from repo_dashboard.discovery import discover_git_repos
-from repo_dashboard.github_ops import get_pr_for_branch_async
+from repo_dashboard.github_ops import get_pr_for_branch_async, get_workflow_runs_for_commit
 from repo_dashboard.vcs_factory import get_vcs_operations
 from repo_dashboard.modals import (
     BatchTaskModal,
@@ -224,42 +224,46 @@ class RepoDashboardApp(App):
         vcs_ops = get_vcs_operations(path)
         summary = await vcs_ops.get_repo_summary_async(path)
 
+        pr_info = None
+        workflow_summary = None
+
         upstream = await vcs_ops.get_upstream_repo(path)
         if upstream:
             cache_key = f"{upstream}:{summary.current_branch}"
-            if pr_info := pr_cache.get(cache_key):
-                summary = RepoSummary(
-                    path=summary.path,
-                    name=summary.name,
-                    vcs_type=summary.vcs_type,
-                    current_branch=summary.current_branch,
-                    ahead_count=summary.ahead_count,
-                    behind_count=summary.behind_count,
-                    uncommitted_count=summary.uncommitted_count,
-                    stash_count=summary.stash_count,
-                    worktree_count=summary.worktree_count,
-                    pr_info=pr_info,
-                    last_modified=summary.last_modified,
-                    status=summary.status,
-                )
+
+            if cached_pr := pr_cache.get(cache_key):
+                pr_info = cached_pr
             else:
                 pr_info = await get_pr_for_branch_async(path, summary.current_branch)
                 if pr_info:
                     pr_cache.set(cache_key, pr_info)
-                    summary = RepoSummary(
-                        path=summary.path,
-                        name=summary.name,
-                        vcs_type=summary.vcs_type,
-                        current_branch=summary.current_branch,
-                        ahead_count=summary.ahead_count,
-                        behind_count=summary.behind_count,
-                        uncommitted_count=summary.uncommitted_count,
-                        stash_count=summary.stash_count,
-                        worktree_count=summary.worktree_count,
-                        pr_info=pr_info,
-                        last_modified=summary.last_modified,
-                        status=summary.status,
-                    )
+
+            commit_sha = await vcs_ops.get_commit_sha(path, summary.current_branch)
+            if commit_sha:
+                if cached_workflow := workflow_cache.get(commit_sha):
+                    workflow_summary = cached_workflow
+                else:
+                    workflow_summary = await get_workflow_runs_for_commit(path, commit_sha)
+                    if workflow_summary:
+                        workflow_cache.set(commit_sha, workflow_summary)
+
+        summary = RepoSummary(
+            path=summary.path,
+            name=summary.name,
+            vcs_type=summary.vcs_type,
+            current_branch=summary.current_branch,
+            ahead_count=summary.ahead_count,
+            behind_count=summary.behind_count,
+            uncommitted_count=summary.uncommitted_count,
+            stash_count=summary.stash_count,
+            worktree_count=summary.worktree_count,
+            pr_info=pr_info,
+            last_modified=summary.last_modified,
+            status=summary.status,
+            jj_is_colocated=summary.jj_is_colocated,
+            jj_working_copy_id=summary.jj_working_copy_id,
+            workflow_summary=workflow_summary,
+        )
 
         self._summaries[path] = summary
         self._update_repo_table_row(path, summary)
@@ -631,7 +635,7 @@ class RepoDashboardApp(App):
         return sorted_branches
 
     async def _load_branch_pr(self, repo_path: Path, branch: BranchInfo) -> None:
-        """Load PR info for a branch"""
+        """Load PR and workflow info for a branch"""
         vcs_ops = get_vcs_operations(repo_path)
         upstream = await vcs_ops.get_upstream_repo(repo_path)
         if not upstream:
@@ -645,16 +649,33 @@ class RepoDashboardApp(App):
             if pr_info:
                 pr_cache.set(cache_key, pr_info)
 
-        if pr_info:
-            self._update_branch_pr_row(branch.name, pr_info)
+        commit_sha = await vcs_ops.get_commit_sha(repo_path, branch.name)
+        workflow_summary = None
+        if commit_sha:
+            workflow_summary = workflow_cache.get(commit_sha)
+            if not workflow_summary:
+                workflow_summary = await get_workflow_runs_for_commit(repo_path, commit_sha)
+                if workflow_summary:
+                    workflow_cache.set(commit_sha, workflow_summary)
 
-    def _update_branch_pr_row(self, branch_name: str, pr_info) -> None:
-        """Update PR info for a branch row"""
+        if pr_info or workflow_summary:
+            self._update_branch_info_row(branch.name, pr_info, workflow_summary)
+
+    def _update_branch_info_row(self, branch_name: str, pr_info, workflow_summary) -> None:
+        """Update PR and workflow info for a branch row"""
         table = self.query_one(DataTable)
         row_key = f"branch:{branch_name}"
         try:
-            pr_text = f"#{pr_info.number}: {truncate(pr_info.title, 42)}"
-            table.update_cell(row_key, "Reference", pr_text)
+            if pr_info:
+                pr_text = f"#{pr_info.number}: {truncate(pr_info.title, 42)}"
+                table.update_cell(row_key, "Reference", pr_text)
+
+            if workflow_summary:
+                row_data = table.get_row(row_key)
+                current_status = str(row_data[2]) if len(row_data) > 2 else ""
+                if workflow_summary.status_display:
+                    new_status = f"{current_status} {workflow_summary.status_display}".strip()
+                    table.update_cell(row_key, "Status", new_status)
         except Exception:
             pass
 
@@ -789,6 +810,7 @@ class RepoDashboardApp(App):
         pr_cache.clear()
         branch_cache.clear()
         commit_cache.clear()
+        workflow_cache.clear()
         self._summaries.clear()
         self._active_filters = []
         self._sort_mode = SortMode.NAME

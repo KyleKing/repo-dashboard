@@ -96,6 +96,28 @@ class GitOperations:
         """Get upstream repo identifier (e.g., 'owner/repo')"""
         return await git_ops.get_upstream_repo(repo_path)
 
+    async def get_commit_sha(self, repo_path: Path, ref: str) -> str | None:
+        """Get commit SHA for a given ref (branch, tag, etc.)"""
+        import asyncio
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "-C",
+                str(repo_path),
+                "rev-parse",
+                ref,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+
+            if proc.returncode == 0:
+                return stdout.decode().strip()
+            return None
+        except Exception:
+            return None
+
     async def fetch_all(self, repo_path: Path) -> tuple[bool, str]:
         """Fetch from all remotes with prune"""
         import asyncio

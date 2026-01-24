@@ -13,6 +13,25 @@ class ItemKind(StrEnum):
     WORKTREE = "worktree"
 
 
+class WorkflowConclusion(StrEnum):
+    SUCCESS = "success"
+    FAILURE = "failure"
+    CANCELLED = "cancelled"
+    SKIPPED = "skipped"
+    NEUTRAL = "neutral"
+    TIMED_OUT = "timed_out"
+    ACTION_REQUIRED = "action_required"
+
+
+class WorkflowStatus(StrEnum):
+    COMPLETED = "completed"
+    IN_PROGRESS = "in_progress"
+    QUEUED = "queued"
+    REQUESTED = "requested"
+    WAITING = "waiting"
+    PENDING = "pending"
+
+
 class RepoStatus(StrEnum):
     OK = "ok"
     WARNING = "warning"
@@ -83,6 +102,7 @@ class RepoSummary:
     status: RepoStatus
     jj_is_colocated: bool | None = None
     jj_working_copy_id: str | None = None
+    workflow_summary: "WorkflowSummary | None" = None
 
     @property
     def is_dirty(self) -> bool:
@@ -101,6 +121,8 @@ class RepoSummary:
             parts.append(f"${self.stash_count}")
         if self.worktree_count > 0:
             parts.append(f"W{self.worktree_count}")
+        if self.workflow_summary and self.workflow_summary.status_display:
+            parts.append(self.workflow_summary.status_display)
         return " ".join(parts) if parts else "clean"
 
     @property
@@ -132,6 +154,7 @@ class BranchInfo:
     ahead: int
     behind: int
     tracking: str | None
+    workflow_summary: "WorkflowSummary | None" = None
 
 
 @dataclass(frozen=True)
@@ -141,6 +164,47 @@ class PRInfo:
     url: str
     state: str
     checks_status: str | None
+
+
+@dataclass(frozen=True)
+class WorkflowRun:
+    """Single workflow run information"""
+
+    workflow_name: str
+    run_id: int
+    status: str
+    conclusion: str | None
+    created_at: datetime
+    html_url: str
+
+
+@dataclass(frozen=True)
+class WorkflowSummary:
+    """Aggregated workflow status for a commit"""
+
+    success_count: int = 0
+    failure_count: int = 0
+    skipped_count: int = 0
+    pending_count: int = 0
+    runs: list[WorkflowRun] = None
+
+    def __post_init__(self):
+        if self.runs is None:
+            object.__setattr__(self, "runs", [])
+
+    @property
+    def status_display(self) -> str:
+        """Format workflow status for display"""
+        parts = []
+        if self.success_count > 0:
+            parts.append(f"✓{self.success_count}")
+        if self.failure_count > 0:
+            parts.append(f"✗{self.failure_count}")
+        if self.skipped_count > 0:
+            parts.append(f"○{self.skipped_count}")
+        if self.pending_count > 0:
+            parts.append(f"◷{self.pending_count}")
+        return " ".join(parts) if parts else ""
 
 
 @dataclass(frozen=True)
