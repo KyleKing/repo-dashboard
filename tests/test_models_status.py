@@ -166,3 +166,72 @@ def test_warning_message_generic_warning() -> None:
         status=RepoStatus.WARNING,
     )
     assert summary.warning_message == "Unknown issue"
+
+
+def test_workflow_summary_status_display_empty() -> None:
+    """Test WorkflowSummary with no workflows"""
+    from repo_dashboard.models import WorkflowSummary
+
+    summary = WorkflowSummary()
+    assert summary.status_display == ""
+
+
+def test_workflow_summary_status_display_success() -> None:
+    """Test WorkflowSummary with success workflows"""
+    from repo_dashboard.models import WorkflowSummary
+
+    summary = WorkflowSummary(success_count=2)
+    assert summary.status_display == "✓2"
+
+
+def test_workflow_summary_status_display_failure() -> None:
+    """Test WorkflowSummary with failure workflows"""
+    from repo_dashboard.models import WorkflowSummary
+
+    summary = WorkflowSummary(failure_count=3)
+    assert summary.status_display == "✗3"
+
+
+def test_workflow_summary_status_display_mixed() -> None:
+    """Test WorkflowSummary with mixed workflow statuses"""
+    from repo_dashboard.models import WorkflowSummary
+
+    summary = WorkflowSummary(
+        success_count=2, failure_count=1, skipped_count=1, pending_count=1
+    )
+    assert summary.status_display == "✓2 ✗1 ○1 ◷1"
+
+
+def test_workflow_summary_status_display_skipped_only() -> None:
+    """Test WorkflowSummary with only skipped workflows"""
+    from repo_dashboard.models import WorkflowSummary
+
+    summary = WorkflowSummary(skipped_count=4)
+    assert summary.status_display == "○4"
+
+
+def test_repo_summary_status_summary_includes_workflow() -> None:
+    """Test that status_summary includes workflow status"""
+    from repo_dashboard.models import WorkflowSummary
+
+    workflow_summary = WorkflowSummary(success_count=1, failure_count=1)
+
+    summary = RepoSummary(
+        path=Path("/repo"),
+        name="repo",
+        vcs_type="git",
+        current_branch="main",
+        ahead_count=2,
+        behind_count=0,
+        uncommitted_count=1,
+        stash_count=0,
+        worktree_count=0,
+        pr_info=None,
+        last_modified=datetime.now(),
+        status=RepoStatus.OK,
+        workflow_summary=workflow_summary,
+    )
+    assert "✓1" in summary.status_summary
+    assert "✗1" in summary.status_summary
+    assert "↑2" in summary.status_summary
+    assert "*1" in summary.status_summary
