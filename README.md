@@ -246,6 +246,60 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for more details on VHS setup and recor
 - **[mgitstatus](https://github.com/fboender/multi-git-status)** - Show uncommitted, untracked, and unpushed changes for multiple repos
 - **[mu-repo](https://github.com/fabioz/mu-repo)** - Tool to help in dealing with multiple git repositories
 - **[RepoBar](https://github.com/steipete/RepoBar)** - macOS menu bar app for monitoring GitHub repositories with CI status, activity preview, and local git integration
+- **[Mani](https://github.com/alajmo/mani)** - Go-based CLI with YAML configuration, built-in TUI, batch operations, and parallel command execution across repos
+
+### DIY Alternative: Bash + gh CLI
+
+You can achieve similar functionality using bash and the GitHub CLI:
+
+```bash
+#!/bin/bash
+# Example script showing repo status (similar to mani/repo-dashboard output)
+
+for repo in ~/Developer/*/; do
+  cd "$repo" || continue
+
+  # Skip non-git repos
+  [[ ! -d .git ]] && continue
+
+  # Get basic git info
+  name=$(basename "$repo")
+  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
+
+  # Ahead/behind counts
+  upstream=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
+  if [[ -n "$upstream" ]]; then
+    ahead=$(git rev-list --count "$upstream..HEAD" 2>/dev/null || echo "0")
+    behind=$(git rev-list --count "HEAD..$upstream" 2>/dev/null || echo "0")
+  else
+    ahead="0"
+    behind="0"
+  fi
+
+  # Status counts (staged, unstaged, untracked)
+  staged=$(git diff --cached --numstat 2>/dev/null | wc -l | tr -d ' ')
+  unstaged=$(git diff --numstat 2>/dev/null | wc -l | tr -d ' ')
+  untracked=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
+
+  # PR info (requires gh CLI)
+  pr_info=$(gh pr view --json number,title 2>/dev/null | jq -r '"\(.number): \(.title)"' 2>/dev/null || echo "—")
+
+  # Last modified
+  last_modified=$(git log -1 --format=%ar 2>/dev/null || echo "?")
+
+  # Output
+  printf "%-20s %-15s ↑%-2s ↓%-2s +%-2s *%-2s ?%-2s %-40s %s\n" \
+    "$name" "$branch" "$ahead" "$behind" "$staged" "$unstaged" "$untracked" \
+    "${pr_info:0:40}" "$last_modified"
+done
+```
+
+**Output example:**
+```
+repo-dashboard       main            ↑0  ↓0  +2  *1  ?0  123: Add feature X                       2 hours ago
+my-project           develop         ↑3  ↓1  +0  *5  ?2  —                                        1 day ago
+another-repo         feat/new-ui     ↑1  ↓0  +1  *0  ?0  456: Redesign UI components              3 days ago
+```
 
 ### Single-Repository TUIs
 
