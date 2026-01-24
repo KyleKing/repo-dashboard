@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -186,11 +186,7 @@ class WorkflowSummary:
     failure_count: int = 0
     skipped_count: int = 0
     pending_count: int = 0
-    runs: list[WorkflowRun] = None
-
-    def __post_init__(self):
-        if self.runs is None:
-            object.__setattr__(self, "runs", [])
+    runs: list[WorkflowRun] = field(default_factory=list)
 
     @property
     def status_display(self) -> str:
