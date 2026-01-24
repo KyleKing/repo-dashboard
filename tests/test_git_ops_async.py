@@ -14,7 +14,7 @@ async def test_get_repo_summary_async_detached_head_sets_status() -> None:
         patch("repo_dashboard.git_ops.get_current_branch_async", return_value="HEAD"),
         patch("repo_dashboard.git_ops._is_detached_head_async", return_value=True),
         patch("repo_dashboard.git_ops._get_ahead_behind_async", return_value=(0, 0)),
-        patch("repo_dashboard.git_ops._get_uncommitted_count_async", return_value=0),
+        patch("repo_dashboard.git_ops._get_status_counts_async", return_value=(0, 0, 0)),
         patch("repo_dashboard.git_ops.get_last_modified_time", return_value=datetime.now()),
         patch("repo_dashboard.git_ops.get_stash_count", return_value=0),
         patch("repo_dashboard.git_ops.get_worktree_count", return_value=0),
@@ -31,7 +31,7 @@ async def test_get_repo_summary_async_no_upstream_sets_status() -> None:
         patch("repo_dashboard.git_ops.get_current_branch_async", return_value="main"),
         patch("repo_dashboard.git_ops._is_detached_head_async", return_value=False),
         patch("repo_dashboard.git_ops._get_ahead_behind_async", return_value=(0, 0)),
-        patch("repo_dashboard.git_ops._get_uncommitted_count_async", return_value=0),
+        patch("repo_dashboard.git_ops._get_status_counts_async", return_value=(0, 0, 0)),
         patch("repo_dashboard.git_ops.get_last_modified_time", return_value=datetime.now()),
         patch("repo_dashboard.git_ops.get_stash_count", return_value=0),
         patch("repo_dashboard.git_ops.get_worktree_count", return_value=0),
@@ -40,6 +40,7 @@ async def test_get_repo_summary_async_no_upstream_sets_status() -> None:
         result = await get_repo_summary_async(Path("/repo"))
         assert result.status == RepoStatus.NO_UPSTREAM
         assert result.warning_message == "No upstream configured"
+        assert result.has_remote is False
 
 
 @pytest.mark.asyncio
@@ -49,7 +50,7 @@ async def test_get_repo_summary_async_with_upstream_is_ok() -> None:
         patch("repo_dashboard.git_ops.get_current_branch_async", return_value="main"),
         patch("repo_dashboard.git_ops._is_detached_head_async", return_value=False),
         patch("repo_dashboard.git_ops._get_ahead_behind_async", return_value=(0, 0)),
-        patch("repo_dashboard.git_ops._get_uncommitted_count_async", return_value=0),
+        patch("repo_dashboard.git_ops._get_status_counts_async", return_value=(0, 0, 0)),
         patch("repo_dashboard.git_ops.get_last_modified_time", return_value=datetime.now()),
         patch("repo_dashboard.git_ops.get_stash_count", return_value=0),
         patch("repo_dashboard.git_ops.get_worktree_count", return_value=0),
@@ -58,6 +59,7 @@ async def test_get_repo_summary_async_with_upstream_is_ok() -> None:
         result = await get_repo_summary_async(Path("/repo"))
         assert result.status == RepoStatus.OK
         assert result.warning_message is None
+        assert result.has_remote is True
 
 
 @pytest.mark.asyncio
@@ -67,15 +69,17 @@ async def test_get_repo_summary_async_ahead_behind_is_ok() -> None:
         patch("repo_dashboard.git_ops.get_current_branch_async", return_value="main"),
         patch("repo_dashboard.git_ops._is_detached_head_async", return_value=False),
         patch("repo_dashboard.git_ops._get_ahead_behind_async", return_value=(2, 1)),
-        patch("repo_dashboard.git_ops._get_uncommitted_count_async", return_value=0),
+        patch("repo_dashboard.git_ops._get_status_counts_async", return_value=(0, 0, 0)),
         patch("repo_dashboard.git_ops.get_last_modified_time", return_value=datetime.now()),
         patch("repo_dashboard.git_ops.get_stash_count", return_value=0),
         patch("repo_dashboard.git_ops.get_worktree_count", return_value=0),
+        patch("repo_dashboard.git_ops._has_tracking_branch", return_value=True),
     ):
         result = await get_repo_summary_async(Path("/repo"))
         assert result.status == RepoStatus.OK
         assert result.ahead_count == 2
         assert result.behind_count == 1
+        assert result.has_remote is True
 
 
 @pytest.mark.asyncio

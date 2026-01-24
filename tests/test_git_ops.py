@@ -158,7 +158,7 @@ def test_get_repo_summary_creates_summary_with_all_fields() -> None:
     with (
         patch("repo_dashboard.git_ops.get_current_branch", return_value="develop"),
         patch("repo_dashboard.git_ops._get_ahead_behind", return_value=(2, 1)),
-        patch("repo_dashboard.git_ops._get_uncommitted_count", return_value=3),
+        patch("repo_dashboard.git_ops._get_status_counts", return_value=(1, 2, 0)),
     ):
         result = get_repo_summary(Path("/path/to/my-repo"))
         assert result.path == Path("/path/to/my-repo")
@@ -166,6 +166,9 @@ def test_get_repo_summary_creates_summary_with_all_fields() -> None:
         assert result.current_branch == "develop"
         assert result.ahead_count == 2
         assert result.behind_count == 1
+        assert result.staged_count == 1
+        assert result.unstaged_count == 2
+        assert result.untracked_count == 0
         assert result.uncommitted_count == 3
         assert result.is_dirty is True
 
@@ -174,7 +177,7 @@ def test_get_repo_summary_clean_repo_is_not_dirty() -> None:
     with (
         patch("repo_dashboard.git_ops.get_current_branch", return_value="main"),
         patch("repo_dashboard.git_ops._get_ahead_behind", return_value=(0, 0)),
-        patch("repo_dashboard.git_ops._get_uncommitted_count", return_value=0),
+        patch("repo_dashboard.git_ops._get_status_counts", return_value=(0, 0, 0)),
     ):
         result = get_repo_summary(Path("/path/to/clean-repo"))
         assert result.is_dirty is False

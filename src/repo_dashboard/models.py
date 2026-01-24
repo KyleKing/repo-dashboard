@@ -75,14 +75,22 @@ class RepoSummary:
     current_branch: str
     ahead_count: int
     behind_count: int
-    uncommitted_count: int
+    staged_count: int
+    unstaged_count: int
+    untracked_count: int
     stash_count: int
     worktree_count: int
     pr_info: "PRInfo | None"
     last_modified: datetime
     status: RepoStatus
+    has_remote: bool = True
     jj_is_colocated: bool | None = None
     jj_working_copy_id: str | None = None
+
+    @property
+    def uncommitted_count(self) -> int:
+        """Total uncommitted changes (backward compatibility)"""
+        return self.staged_count + self.unstaged_count + self.untracked_count
 
     @property
     def is_dirty(self) -> bool:
@@ -95,8 +103,12 @@ class RepoSummary:
             parts.append(f"↑{self.ahead_count}")
         if self.behind_count > 0:
             parts.append(f"↓{self.behind_count}")
-        if self.uncommitted_count > 0:
-            parts.append(f"*{self.uncommitted_count}")
+        if self.staged_count > 0:
+            parts.append(f"+{self.staged_count}")
+        if self.unstaged_count > 0:
+            parts.append(f"*{self.unstaged_count}")
+        if self.untracked_count > 0:
+            parts.append(f"?{self.untracked_count}")
         if self.stash_count > 0:
             parts.append(f"${self.stash_count}")
         if self.worktree_count > 0:
@@ -160,9 +172,16 @@ class RepoItem:
     display_name: str
     ahead: int
     behind: int
-    uncommitted: int
+    staged: int
+    unstaged: int
+    untracked: int
     reference: str | None
     pr_info: PRInfo | None
+
+    @property
+    def uncommitted(self) -> int:
+        """Total uncommitted changes (backward compatibility)"""
+        return self.staged + self.unstaged + self.untracked
 
     @property
     def status_summary(self) -> str:
@@ -171,8 +190,12 @@ class RepoItem:
             parts.append(f"↑{self.ahead}")
         if self.behind > 0:
             parts.append(f"↓{self.behind}")
-        if self.uncommitted > 0:
-            parts.append(f"*{self.uncommitted}")
+        if self.staged > 0:
+            parts.append(f"+{self.staged}")
+        if self.unstaged > 0:
+            parts.append(f"*{self.unstaged}")
+        if self.untracked > 0:
+            parts.append(f"?{self.untracked}")
         return " ".join(parts) if parts else "—"
 
 

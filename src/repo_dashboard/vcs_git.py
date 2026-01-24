@@ -12,39 +12,11 @@ class GitOperations:
 
     def get_repo_summary(self, repo_path: Path) -> RepoSummary:
         """Get repository summary with status, branches, counts"""
-        summary = git_ops.get_repo_summary(repo_path)
-        return RepoSummary(
-            path=summary.path,
-            name=summary.name,
-            vcs_type="git",
-            current_branch=summary.current_branch,
-            ahead_count=summary.ahead_count,
-            behind_count=summary.behind_count,
-            uncommitted_count=summary.uncommitted_count,
-            stash_count=summary.stash_count,
-            worktree_count=summary.worktree_count,
-            pr_info=summary.pr_info,
-            last_modified=summary.last_modified,
-            status=summary.status,
-        )
+        return git_ops.get_repo_summary(repo_path)
 
     async def get_repo_summary_async(self, repo_path: Path) -> RepoSummary:
         """Async version of get_repo_summary"""
-        summary = await git_ops.get_repo_summary_async(repo_path)
-        return RepoSummary(
-            path=summary.path,
-            name=summary.name,
-            vcs_type="git",
-            current_branch=summary.current_branch,
-            ahead_count=summary.ahead_count,
-            behind_count=summary.behind_count,
-            uncommitted_count=summary.uncommitted_count,
-            stash_count=summary.stash_count,
-            worktree_count=summary.worktree_count,
-            pr_info=summary.pr_info,
-            last_modified=summary.last_modified,
-            status=summary.status,
-        )
+        return await git_ops.get_repo_summary_async(repo_path)
 
     def get_current_branch(self, repo_path: Path) -> str:
         """Get current branch name"""

@@ -89,7 +89,7 @@ class JJOperations:
         return "@"
 
     async def _get_uncommitted_count_async(self, repo_path: Path) -> int:
-        """Get count of modified files in working copy"""
+        """Deprecated: Get count of modified files in working copy"""
         output = await self._run_jj_async(repo_path, "status")
         lines = [line for line in output.splitlines() if line.startswith("Working copy changes:")]
         if not lines:
@@ -99,6 +99,26 @@ class JJOperations:
             if line.startswith(("A ", "M ", "D ", "R ")):
                 count += 1
         return count
+
+    async def _get_status_counts_async(self, repo_path: Path) -> tuple[int, int, int]:
+        """Returns (staged_count, unstaged_count, untracked_count)
+
+        For jj:
+        - staged = 0 (no staging concept)
+        - unstaged = modified files in working copy (A, M, D, R)
+        - untracked = 0 (jj tracks all files in working copy)
+        """
+        output = await self._run_jj_async(repo_path, "status")
+        lines = [line for line in output.splitlines() if line.startswith("Working copy changes:")]
+        if not lines:
+            return (0, 0, 0)
+
+        unstaged_count = 0
+        for line in output.splitlines():
+            if line.startswith(("A ", "M ", "D ", "R ")):
+                unstaged_count += 1
+
+        return (0, unstaged_count, 0)
 
     def _parse_ahead_behind(self, repo_path: Path, bookmark: str) -> tuple[int, int]:
         """Parse ahead/behind for a bookmark"""
@@ -247,12 +267,15 @@ class JJOperations:
             current_branch=current_bookmark,
             ahead_count=ahead,
             behind_count=behind,
-            uncommitted_count=0,
+            staged_count=0,
+            unstaged_count=0,
+            untracked_count=0,
             stash_count=0,
             worktree_count=0,
             pr_info=None,
             last_modified=last_modified,
             status=RepoStatus.OK,
+            has_remote=True,
             jj_is_colocated=self._is_colocated(repo_path),
         )
 
@@ -261,7 +284,7 @@ class JJOperations:
         try:
             current_bookmark = await self.get_current_branch_async(repo_path)
             ahead, behind = await self._get_ahead_behind_async(repo_path, current_bookmark)
-            uncommitted = await self._get_uncommitted_count_async(repo_path)
+            staged, unstaged, untracked = await self._get_status_counts_async(repo_path)
             worktree_count = await self.get_worktree_count(repo_path)
 
             try:
@@ -271,10 +294,15 @@ class JJOperations:
                 last_modified = datetime.now()
 
             status = RepoStatus.OK
+            has_remote = True
             if ahead == 0 and behind == 0 and current_bookmark != "@":
                 upstream_exists = await self._check_tracking_exists(repo_path, current_bookmark)
                 if not upstream_exists:
                     status = RepoStatus.NO_UPSTREAM
+                    has_remote = False
+            elif current_bookmark != "@":
+                upstream_exists = await self._check_tracking_exists(repo_path, current_bookmark)
+                has_remote = upstream_exists
 
             return RepoSummary(
                 path=repo_path,
@@ -283,12 +311,15 @@ class JJOperations:
                 current_branch=current_bookmark,
                 ahead_count=ahead,
                 behind_count=behind,
-                uncommitted_count=uncommitted,
+                staged_count=staged,
+                unstaged_count=unstaged,
+                untracked_count=untracked,
                 stash_count=0,
                 worktree_count=worktree_count,
                 pr_info=None,
                 last_modified=last_modified,
                 status=status,
+                has_remote=has_remote,
                 jj_is_colocated=self._is_colocated(repo_path),
             )
         except FileNotFoundError:
@@ -299,12 +330,15 @@ class JJOperations:
                 current_branch="?",
                 ahead_count=0,
                 behind_count=0,
-                uncommitted_count=0,
+                staged_count=0,
+                unstaged_count=0,
+                untracked_count=0,
                 stash_count=0,
                 worktree_count=0,
                 pr_info=None,
                 last_modified=datetime.now(),
                 status=RepoStatus.NO_JJ,
+                has_remote=False,
             )
         except Exception:
             return RepoSummary(
@@ -314,12 +348,15 @@ class JJOperations:
                 current_branch="?",
                 ahead_count=0,
                 behind_count=0,
-                uncommitted_count=0,
+                staged_count=0,
+                unstaged_count=0,
+                untracked_count=0,
                 stash_count=0,
                 worktree_count=0,
                 pr_info=None,
                 last_modified=datetime.now(),
                 status=RepoStatus.WARNING,
+                has_remote=False,
             )
 
     async def get_worktree_count(self, repo_path: Path) -> int:

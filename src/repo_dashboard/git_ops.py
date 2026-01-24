@@ -88,13 +88,27 @@ async def get_current_branch_async(path: Path) -> str:
 
 
 def _get_uncommitted_count(path: Path) -> int:
+    """Deprecated: use _get_status_counts instead"""
     status = _run_git(path, "status", "--porcelain")
     return len(status.splitlines()) if status else 0
 
 
 async def _get_uncommitted_count_async(path: Path) -> int:
+    """Deprecated: use _get_status_counts_async instead"""
     status = await _run_git_async(path, "status", "--porcelain")
     return len(status.splitlines()) if status else 0
+
+
+def _get_status_counts(path: Path) -> tuple[int, int, int]:
+    """Returns (staged_count, unstaged_count, untracked_count)"""
+    untracked, modified, staged = get_status_files(path)
+    return len(staged), len(modified), len(untracked)
+
+
+async def _get_status_counts_async(path: Path) -> tuple[int, int, int]:
+    """Returns (staged_count, unstaged_count, untracked_count)"""
+    untracked, modified, staged = await get_status_files_async(path)
+    return len(staged), len(modified), len(untracked)
 
 
 def _parse_ahead_behind(output: str) -> tuple[int, int]:
@@ -222,19 +236,25 @@ def get_repo_summary(path: Path) -> RepoSummary:
     except Exception:
         last_modified = datetime.now()
 
+    current_branch = get_current_branch(path)
+    staged, unstaged, untracked = _get_status_counts(path)
+
     return RepoSummary(
         path=path,
         name=path.name,
         vcs_type="git",
-        current_branch=get_current_branch(path),
+        current_branch=current_branch,
         ahead_count=ahead,
         behind_count=behind,
-        uncommitted_count=_get_uncommitted_count(path),
+        staged_count=staged,
+        unstaged_count=unstaged,
+        untracked_count=untracked,
         stash_count=0,
         worktree_count=0,
         pr_info=None,
         last_modified=last_modified,
         status=RepoStatus.OK,
+        has_remote=True,
     )
 
 
@@ -244,7 +264,7 @@ async def get_repo_summary_async(path: Path) -> RepoSummary:
             current_branch,
             is_detached,
             (ahead, behind),
-            uncommitted,
+            (staged, unstaged, untracked),
             last_modified,
             stash_count,
             worktree_count,
@@ -252,19 +272,23 @@ async def get_repo_summary_async(path: Path) -> RepoSummary:
             get_current_branch_async(path),
             _is_detached_head_async(path),
             _get_ahead_behind_async(path),
-            _get_uncommitted_count_async(path),
+            _get_status_counts_async(path),
             get_last_modified_time(path),
             get_stash_count(path),
             get_worktree_count(path),
         )
 
         status = RepoStatus.OK
+        has_remote = True
         if is_detached:
             status = RepoStatus.DETACHED_HEAD
         elif ahead == 0 and behind == 0:
             tracking = await _get_tracking_branch(path, current_branch)
             if not tracking:
                 status = RepoStatus.NO_UPSTREAM
+                has_remote = False
+        else:
+            has_remote = await _has_tracking_branch(path, current_branch)
 
         return RepoSummary(
             path=path,
@@ -273,12 +297,15 @@ async def get_repo_summary_async(path: Path) -> RepoSummary:
             current_branch=current_branch,
             ahead_count=ahead,
             behind_count=behind,
-            uncommitted_count=uncommitted,
+            staged_count=staged,
+            unstaged_count=unstaged,
+            untracked_count=untracked,
             stash_count=stash_count,
             worktree_count=worktree_count,
             pr_info=None,
             last_modified=last_modified,
             status=status,
+            has_remote=has_remote,
         )
     except FileNotFoundError:
         return RepoSummary(
@@ -288,12 +315,15 @@ async def get_repo_summary_async(path: Path) -> RepoSummary:
             current_branch="?",
             ahead_count=0,
             behind_count=0,
-            uncommitted_count=0,
+            staged_count=0,
+            unstaged_count=0,
+            untracked_count=0,
             stash_count=0,
             worktree_count=0,
             pr_info=None,
             last_modified=datetime.now(),
             status=RepoStatus.NO_GIT,
+            has_remote=False,
         )
     except Exception:
         return RepoSummary(
@@ -303,12 +333,15 @@ async def get_repo_summary_async(path: Path) -> RepoSummary:
             current_branch="?",
             ahead_count=0,
             behind_count=0,
-            uncommitted_count=0,
+            staged_count=0,
+            unstaged_count=0,
+            untracked_count=0,
             stash_count=0,
             worktree_count=0,
             pr_info=None,
             last_modified=datetime.now(),
             status=RepoStatus.WARNING,
+            has_remote=False,
         )
 
 
@@ -522,6 +555,12 @@ async def _get_tracking_branch(path: Path, branch: str) -> str | None:
         return output if output else None
     except Exception:
         return None
+
+
+async def _has_tracking_branch(path: Path, branch: str) -> bool:
+    """Check if branch has tracking/upstream configured"""
+    tracking = await _get_tracking_branch(path, branch)
+    return tracking is not None
 
 
 async def get_last_modified_time(path: Path) -> datetime:

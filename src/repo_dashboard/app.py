@@ -170,7 +170,9 @@ class RepoDashboardApp(App):
                 current_branch="...",
                 ahead_count=0,
                 behind_count=0,
-                uncommitted_count=0,
+                staged_count=0,
+                unstaged_count=0,
+                untracked_count=0,
                 stash_count=0,
                 worktree_count=0,
                 pr_info=None,
@@ -316,14 +318,16 @@ class RepoDashboardApp(App):
                 else "—"
             )
 
-            if summary.ahead_count > 0 and summary.behind_count > 0:
+            if not summary.has_remote:
+                branch_color = "#a5adcb"
+            elif summary.ahead_count > 0 and summary.behind_count > 0:
                 branch_color = "#ed8796"
             elif summary.ahead_count > 0:
-                branch_color = "#eed49f"
+                branch_color = "#c6a0f6"
             elif summary.behind_count > 0:
-                branch_color = "#8aadf4"
+                branch_color = "#eed49f"
             elif summary.uncommitted_count == 0:
-                branch_color = "#a5adcb"
+                branch_color = "#a6da95"
             else:
                 branch_color = "#cad3f5"
 
