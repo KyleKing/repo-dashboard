@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -19,6 +20,12 @@ func (m Model) View() string {
 		return m.renderHelp()
 	case ViewModeRepoDetail:
 		return m.renderRepoDetail()
+	case ViewModeFilter:
+		return m.renderFilterModal()
+	case ViewModeSort:
+		return m.renderSortModal()
+	case ViewModeBatchProgress:
+		return m.renderBatchProgress()
 	default:
 		return m.renderRepoList()
 	}
@@ -79,7 +86,11 @@ func (m Model) renderStatusBar() string {
 		parts = append(parts, styles.Badge(filter.String(), styles.FilterBadgeStyle))
 	}
 
-	parts = append(parts, styles.Badge(m.sortMode.String(), styles.SortBadgeStyle))
+	sortLabel := m.sortMode.String()
+	if m.sortReverse {
+		sortLabel += " (rev)"
+	}
+	parts = append(parts, styles.Badge(sortLabel, styles.SortBadgeStyle))
 
 	if m.searchText != "" {
 		parts = append(parts, styles.Badge("\""+m.searchText+"\"", styles.SearchBadgeStyle))
@@ -252,32 +263,35 @@ func (m Model) renderHelp() string {
 		{
 			"Navigation",
 			[]struct{ key, desc string }{
-				{"j/k, ↑/↓", "Move up/down"},
+				{"j/k, Up/Down", "Move up/down"},
+				{"h/l, Left/Right", "Switch tabs (detail view)"},
 				{"g/G", "Go to top/bottom"},
 				{"enter, space", "Select/enter"},
 				{"esc, backspace", "Go back"},
+				{"tab", "Next tab (detail view)"},
 			},
 		},
 		{
 			"Filtering & Sorting",
 			[]struct{ key, desc string }{
-				{"f", "Cycle filter (all → dirty → ahead → behind → has_pr → has_stash)"},
-				{"s", "Cycle sort (name → modified → status → branch)"},
+				{"f", "Open filter menu"},
+				{"s", "Open sort menu"},
+				{"R", "Reverse sort order"},
 				{"/", "Search repositories"},
 			},
 		},
 		{
-			"Actions",
+			"Batch Actions",
 			[]struct{ key, desc string }{
-				{"r", "Refresh all data"},
-				{"F", "Fetch all (batch)"},
-				{"P", "Prune remote (batch)"},
-				{"C", "Cleanup merged (batch)"},
+				{"F", "Fetch all (filtered repos)"},
+				{"P", "Prune remote (filtered repos)"},
+				{"C", "Cleanup merged (filtered repos)"},
 			},
 		},
 		{
 			"General",
 			[]struct{ key, desc string }{
+				{"r", "Refresh all data"},
 				{"?", "Toggle help"},
 				{"q, ctrl+c", "Quit"},
 			},
@@ -313,44 +327,382 @@ func (m Model) renderRepoDetail() string {
 	b.WriteString(styles.SubtitleStyle.Render(summary.Path))
 	b.WriteString("\n\n")
 
-	b.WriteString(styles.HeaderStyle.Render("Status"))
+	b.WriteString(m.renderDetailTabs())
+	b.WriteString("\n\n")
+
+	switch m.detailTab {
+	case DetailTabBranches:
+		b.WriteString(m.renderBranchList())
+	case DetailTabStashes:
+		b.WriteString(m.renderStashList())
+	case DetailTabWorktrees:
+		b.WriteString(m.renderWorktreeList())
+	}
+
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  Branch:    %s\n", styles.BranchStyle.Render(summary.Branch)))
-	b.WriteString(fmt.Sprintf("  Upstream:  %s\n", summary.Upstream))
-	b.WriteString(fmt.Sprintf("  Status:    %s\n", summary.StatusSummary()))
-	b.WriteString(fmt.Sprintf("  Modified:  %s\n", summary.RelativeModified()))
+	b.WriteString(styles.FooterStyle.Render("tab: switch tabs  j/k: navigate  esc: back"))
+
+	return b.String()
+}
+
+func (m Model) renderDetailTabs() string {
+	tabs := []struct {
+		name  string
+		tab   DetailTab
+		count int
+	}{
+		{"Branches", DetailTabBranches, len(m.branches)},
+		{"Stashes", DetailTabStashes, len(m.stashes)},
+		{"Worktrees", DetailTabWorktrees, len(m.worktrees)},
+	}
+
+	var parts []string
+	for _, t := range tabs {
+		label := fmt.Sprintf("%s (%d)", t.name, t.count)
+		if t.tab == m.detailTab {
+			parts = append(parts, styles.Badge(label, styles.SortBadgeStyle))
+		} else {
+			parts = append(parts, styles.Badge(label, styles.CountBadgeStyle))
+		}
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func (m Model) renderBranchList() string {
+	if len(m.branches) == 0 {
+		return styles.SubtitleStyle.Render("  No branches found")
+	}
+
+	var rows []string
+	header := fmt.Sprintf("  %-20s  %-20s  %-10s  %s",
+		"BRANCH", "UPSTREAM", "STATUS", "LAST COMMIT")
+	rows = append(rows, styles.HeaderStyle.Render(header))
+
+	for i, branch := range m.branches {
+		cursor := "  "
+		if i == m.detailCursor {
+			cursor = "> "
+		}
+
+		name := truncate(branch.Name, 20)
+		if branch.IsCurrent {
+			name = "* " + name
+		}
+		upstream := truncate(branch.Upstream, 20)
+		status := ""
+		if branch.Ahead > 0 {
+			status += fmt.Sprintf("↑%d", branch.Ahead)
+		}
+		if branch.Behind > 0 {
+			if status != "" {
+				status += " "
+			}
+			status += fmt.Sprintf("↓%d", branch.Behind)
+		}
+		if status == "" {
+			status = "✓"
+		}
+		lastCommit := branch.RelativeLastCommit()
+
+		var style lipgloss.Style
+		if i == m.detailCursor {
+			style = styles.SelectedRowStyle
+		} else {
+			style = styles.TableRowStyle
+		}
+
+		nameStyle := styles.BranchStyle
+		if branch.IsCurrent {
+			nameStyle = styles.PROpenStyle
+		}
+		if i == m.detailCursor {
+			nameStyle = nameStyle.Background(styles.Surface0)
+		}
+
+		row := fmt.Sprintf("%s%s  %-20s  %-10s  %s",
+			cursor,
+			nameStyle.Render(fmt.Sprintf("%-20s", name)),
+			style.Render(upstream),
+			style.Render(status),
+			style.Render(lastCommit),
+		)
+		rows = append(rows, row)
+	}
+
+	return strings.Join(rows, "\n")
+}
+
+func (m Model) renderStashList() string {
+	if len(m.stashes) == 0 {
+		return styles.SubtitleStyle.Render("  No stashes found")
+	}
+
+	var rows []string
+	header := fmt.Sprintf("  %-8s  %-40s  %s",
+		"INDEX", "MESSAGE", "DATE")
+	rows = append(rows, styles.HeaderStyle.Render(header))
+
+	for i, stash := range m.stashes {
+		cursor := "  "
+		if i == m.detailCursor {
+			cursor = "> "
+		}
+
+		index := fmt.Sprintf("stash@{%d}", stash.Index)
+		message := truncate(stash.Message, 40)
+		date := stash.RelativeDate()
+
+		var style lipgloss.Style
+		if i == m.detailCursor {
+			style = styles.SelectedRowStyle
+		} else {
+			style = styles.TableRowStyle
+		}
+
+		row := fmt.Sprintf("%s%-8s  %s  %s",
+			cursor,
+			style.Render(index),
+			style.Render(fmt.Sprintf("%-40s", message)),
+			style.Render(date),
+		)
+		rows = append(rows, row)
+	}
+
+	return strings.Join(rows, "\n")
+}
+
+func (m Model) renderWorktreeList() string {
+	if len(m.worktrees) == 0 {
+		return styles.SubtitleStyle.Render("  No worktrees found")
+	}
+
+	var rows []string
+	header := fmt.Sprintf("  %-30s  %-20s  %s",
+		"PATH", "BRANCH", "STATUS")
+	rows = append(rows, styles.HeaderStyle.Render(header))
+
+	for i, wt := range m.worktrees {
+		cursor := "  "
+		if i == m.detailCursor {
+			cursor = "> "
+		}
+
+		path := truncate(filepath.Base(wt.Path), 30)
+		branch := truncate(wt.Branch, 20)
+		status := ""
+		if wt.IsBare {
+			status = "bare"
+		}
+		if wt.IsLocked {
+			if status != "" {
+				status += ", "
+			}
+			status += "locked"
+		}
+		if status == "" {
+			status = "active"
+		}
+
+		var style lipgloss.Style
+		if i == m.detailCursor {
+			style = styles.SelectedRowStyle
+		} else {
+			style = styles.TableRowStyle
+		}
+
+		row := fmt.Sprintf("%s%s  %s  %s",
+			cursor,
+			style.Render(fmt.Sprintf("%-30s", path)),
+			styles.BranchStyle.Render(fmt.Sprintf("%-20s", branch)),
+			style.Render(status),
+		)
+		rows = append(rows, row)
+	}
+
+	return strings.Join(rows, "\n")
+}
+
+func (m Model) renderFilterModal() string {
+	var b strings.Builder
+
+	b.WriteString(styles.TitleStyle.Render("Select Filter"))
+	b.WriteString("\n\n")
+
+	modes := models.AllFilterModes()
+	currentFilter := m.CurrentFilter()
+
+	for i, mode := range modes {
+		cursor := "  "
+		if i == m.filterCursor {
+			cursor = "> "
+		}
+
+		indicator := "  "
+		if mode == currentFilter {
+			indicator = "* "
+		}
+
+		label := mode.String()
+		count := m.countForFilter(mode)
+		countStr := fmt.Sprintf("(%d)", count)
+
+		var style lipgloss.Style
+		if i == m.filterCursor {
+			style = styles.SelectedRowStyle
+		} else {
+			style = styles.TableRowStyle
+		}
+
+		row := fmt.Sprintf("%s%s%s  %s",
+			cursor,
+			styles.PROpenStyle.Render(indicator),
+			style.Render(fmt.Sprintf("%-12s", label)),
+			styles.SubtitleStyle.Render(countStr),
+		)
+		b.WriteString(row)
+		b.WriteString("\n")
+	}
+
 	b.WriteString("\n")
+	b.WriteString(styles.FooterStyle.Render("enter: select  esc: cancel"))
 
-	if summary.Ahead > 0 || summary.Behind > 0 {
-		b.WriteString(styles.HeaderStyle.Render("Sync"))
-		b.WriteString("\n")
-		if summary.Ahead > 0 {
-			b.WriteString(fmt.Sprintf("  %s ahead of upstream\n", styles.AheadStyle.Render(fmt.Sprintf("%d", summary.Ahead))))
+	return b.String()
+}
+
+func (m Model) countForFilter(mode models.FilterMode) int {
+	count := 0
+	for _, s := range m.summaries {
+		switch mode {
+		case models.FilterModeAll:
+			count++
+		case models.FilterModeAhead:
+			if s.Ahead > 0 {
+				count++
+			}
+		case models.FilterModeBehind:
+			if s.Behind > 0 {
+				count++
+			}
+		case models.FilterModeDirty:
+			if s.IsDirty() {
+				count++
+			}
+		case models.FilterModeHasPR:
+			if s.PRInfo != nil {
+				count++
+			}
+		case models.FilterModeHasStash:
+			if s.StashCount > 0 {
+				count++
+			}
 		}
-		if summary.Behind > 0 {
-			b.WriteString(fmt.Sprintf("  %s behind upstream\n", styles.BehindStyle.Render(fmt.Sprintf("%d", summary.Behind))))
+	}
+	return count
+}
+
+func (m Model) renderSortModal() string {
+	var b strings.Builder
+
+	b.WriteString(styles.TitleStyle.Render("Select Sort"))
+	b.WriteString("\n\n")
+
+	modes := []models.SortMode{
+		models.SortModeName,
+		models.SortModeModified,
+		models.SortModeStatus,
+		models.SortModeBranch,
+	}
+
+	for i, mode := range modes {
+		cursor := "  "
+		if i == m.sortCursor {
+			cursor = "> "
 		}
+
+		indicator := "  "
+		if mode == m.sortMode {
+			indicator = "* "
+		}
+
+		label := mode.String()
+
+		var style lipgloss.Style
+		if i == m.sortCursor {
+			style = styles.SelectedRowStyle
+		} else {
+			style = styles.TableRowStyle
+		}
+
+		row := fmt.Sprintf("%s%s%s",
+			cursor,
+			styles.PROpenStyle.Render(indicator),
+			style.Render(label),
+		)
+		b.WriteString(row)
 		b.WriteString("\n")
 	}
 
-	if summary.PRInfo != nil {
-		pr := summary.PRInfo
-		b.WriteString(styles.HeaderStyle.Render("Pull Request"))
+	b.WriteString("\n")
+	reverseLabel := "[ ] Reverse order"
+	if m.sortReverse {
+		reverseLabel = "[x] Reverse order"
+	}
+	b.WriteString(fmt.Sprintf("    %s\n", styles.SubtitleStyle.Render(reverseLabel)))
+
+	b.WriteString("\n")
+	b.WriteString(styles.FooterStyle.Render("enter: select  R: toggle reverse  esc: cancel"))
+
+	return b.String()
+}
+
+func (m Model) renderBatchProgress() string {
+	var b strings.Builder
+
+	b.WriteString(styles.TitleStyle.Render(m.batchTask))
+	b.WriteString("\n\n")
+
+	progressWidth := 40
+	filled := 0
+	if m.batchTotal > 0 {
+		filled = (m.batchProgress * progressWidth) / m.batchTotal
+	}
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", progressWidth-filled)
+	progressStr := fmt.Sprintf("[%s] %d/%d", bar, m.batchProgress, m.batchTotal)
+	b.WriteString(progressStr)
+	b.WriteString("\n\n")
+
+	if len(m.batchResults) > 0 {
+		b.WriteString(styles.HeaderStyle.Render("Results"))
 		b.WriteString("\n")
-		b.WriteString(fmt.Sprintf("  #%d %s\n", pr.Number, pr.Title))
-		b.WriteString(fmt.Sprintf("  Status: %s\n", styles.PRStatusBadge(pr.State, pr.IsDraft)))
-		b.WriteString(fmt.Sprintf("  %s → %s\n", pr.HeadRef, pr.BaseRef))
-		b.WriteString("\n")
+
+		maxShow := 15
+		startIdx := 0
+		if len(m.batchResults) > maxShow {
+			startIdx = len(m.batchResults) - maxShow
+		}
+
+		for i := startIdx; i < len(m.batchResults); i++ {
+			result := m.batchResults[i]
+			icon := styles.SuccessStyle.Render("✓")
+			if !result.Success {
+				icon = styles.ErrorStyle.Render("✗")
+			}
+			name := truncate(filepath.Base(result.Path), 25)
+			msg := truncate(result.Message, 40)
+
+			row := fmt.Sprintf("  %s %-25s  %s", icon, name, styles.SubtitleStyle.Render(msg))
+			b.WriteString(row)
+			b.WriteString("\n")
+		}
 	}
 
-	if summary.StashCount > 0 {
-		b.WriteString(styles.HeaderStyle.Render("Stashes"))
-		b.WriteString("\n")
-		b.WriteString(fmt.Sprintf("  %d stashed changes\n", summary.StashCount))
-		b.WriteString("\n")
+	b.WriteString("\n")
+	if m.batchRunning {
+		b.WriteString(styles.SubtitleStyle.Render("Running... please wait"))
+	} else {
+		b.WriteString(styles.FooterStyle.Render("Press esc to close"))
 	}
-
-	b.WriteString(styles.FooterStyle.Render("Press esc to go back"))
 
 	return b.String()
 }

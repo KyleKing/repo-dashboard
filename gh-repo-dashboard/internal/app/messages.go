@@ -34,3 +34,30 @@ type WindowSizeMsg struct {
 	Width  int
 	Height int
 }
+
+type DetailLoadedMsg struct {
+	Path      string
+	Branches  []models.BranchInfo
+	Stashes   []models.StashDetail
+	Worktrees []models.WorktreeInfo
+}
+
+type BatchResult struct {
+	Path    string
+	Success bool
+	Message string
+}
+
+type BatchStartMsg struct {
+	TaskName string
+	Paths    []string
+}
+
+type BatchProgressMsg struct {
+	Result BatchResult
+}
+
+type BatchCompleteMsg struct {
+	TaskName string
+	Results  []BatchResult
+}

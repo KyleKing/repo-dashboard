@@ -1,0 +1,21 @@
+# Binary
+gh-repo-dashboard
+gh-repo-dashboard.exe
+
+# Build output
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+coverage.out
+coverage.html

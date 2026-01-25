@@ -14,6 +14,16 @@ const (
 	ViewModeRepoDetail
 	ViewModeHelp
 	ViewModeFilter
+	ViewModeSort
+	ViewModeBatchProgress
+)
+
+type DetailTab int
+
+const (
+	DetailTabBranches DetailTab = iota
+	DetailTabStashes
+	DetailTabWorktrees
 )
 
 type Model struct {
@@ -40,6 +50,21 @@ type Model struct {
 	loading        bool
 	loadingCount   int
 	loadedCount    int
+
+	detailTab      DetailTab
+	detailCursor   int
+	branches       []models.BranchInfo
+	stashes        []models.StashDetail
+	worktrees      []models.WorktreeInfo
+
+	filterCursor int
+	sortCursor   int
+
+	batchRunning  bool
+	batchTask     string
+	batchResults  []BatchResult
+	batchProgress int
+	batchTotal    int
 
 	keys KeyMap
 	help help.Model

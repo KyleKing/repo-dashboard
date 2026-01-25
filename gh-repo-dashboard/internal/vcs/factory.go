@@ -18,7 +18,7 @@ func GetOperations(repoPath string) Operations {
 	vcsType := DetectVCSType(repoPath)
 	switch vcsType {
 	case models.VCSTypeJJ:
-		return NewGitOperations()
+		return NewJJOperations()
 	default:
 		return NewGitOperations()
 	}

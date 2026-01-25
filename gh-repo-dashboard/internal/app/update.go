@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/kyleking/gh-repo-dashboard/internal/batch"
 	"github.com/kyleking/gh-repo-dashboard/internal/discovery"
 	"github.com/kyleking/gh-repo-dashboard/internal/filters"
 	"github.com/kyleking/gh-repo-dashboard/internal/models"
@@ -23,7 +24,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.searching {
 			return m.handleSearchKey(msg)
 		}
-		return m.handleKey(msg)
+		switch m.viewMode {
+		case ViewModeFilter:
+			return m.handleFilterKey(msg)
+		case ViewModeSort:
+			return m.handleSortKey(msg)
+		case ViewModeRepoDetail:
+			return m.handleDetailKey(msg)
+		case ViewModeBatchProgress:
+			return m.handleBatchKey(msg)
+		default:
+			return m.handleKey(msg)
+		}
 
 	case ReposDiscoveredMsg:
 		m.repoPaths = msg.Paths
@@ -69,6 +81,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			summary.WorkflowInfo = msg.Workflow
 			m.summaries[msg.Path] = summary
 		}
+		return m, nil
+
+	case DetailLoadedMsg:
+		if msg.Path == m.selectedRepo {
+			m.branches = msg.Branches
+			m.stashes = msg.Stashes
+			m.worktrees = msg.Worktrees
+		}
+		return m, nil
+
+	case batch.TaskProgressMsg:
+		m.batchResults = append(m.batchResults, BatchResult{
+			Path:    msg.Result.Path,
+			Success: msg.Result.Success,
+			Message: msg.Result.Message,
+		})
+		m.batchProgress = len(m.batchResults)
+		return m, nil
+
+	case batch.TaskCompleteMsg:
+		m.batchRunning = false
+		for _, r := range msg.Results {
+			m.batchResults = append(m.batchResults, BatchResult{
+				Path:    r.Path,
+				Success: r.Success,
+				Message: r.Message,
+			})
+		}
+		m.batchProgress = len(m.batchResults)
 		return m, nil
 
 	case ErrorMsg:
@@ -117,6 +158,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.viewMode == ViewModeRepoList && m.cursor < len(m.filteredPaths) {
 			m.selectedRepo = m.filteredPaths[m.cursor]
 			m.viewMode = ViewModeRepoDetail
+			m.detailTab = DetailTabBranches
+			m.detailCursor = 0
+			return m, loadDetailCmd(m.selectedRepo)
 		}
 		return m, nil
 
@@ -128,6 +172,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.viewMode = ViewModeRepoList
 		case ViewModeFilter:
 			m.viewMode = ViewModeRepoList
+		case ViewModeSort:
+			m.viewMode = ViewModeRepoList
 		}
 		return m, nil
 
@@ -137,19 +183,189 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, discoverReposCmd(m.scanPaths, m.maxDepth)
 
 	case key.Matches(msg, m.keys.Filter):
-		m.CycleFilter()
-		m.updateFilteredPaths()
-		m.cursor = 0
+		m.viewMode = ViewModeFilter
 		return m, nil
 
 	case key.Matches(msg, m.keys.Sort):
-		m.CycleSort()
-		m.updateFilteredPaths()
+		m.viewMode = ViewModeSort
+		m.sortCursor = int(m.sortMode)
 		return m, nil
 
 	case key.Matches(msg, m.keys.Search):
 		m.searching = true
 		m.searchInput.Focus()
+		return m, nil
+
+	case key.Matches(msg, m.keys.Reverse):
+		m.sortReverse = !m.sortReverse
+		m.updateFilteredPaths()
+		return m, nil
+
+	case key.Matches(msg, m.keys.FetchAll):
+		return m.startBatchTask("Fetch All", batchFetchAllCmd)
+
+	case key.Matches(msg, m.keys.PruneRemote):
+		return m.startBatchTask("Prune Remote", batchPruneRemoteCmd)
+
+	case key.Matches(msg, m.keys.CleanupMerged):
+		return m.startBatchTask("Cleanup Merged", batchCleanupMergedCmd)
+	}
+
+	return m, nil
+}
+
+func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Quit):
+		return m, tea.Quit
+
+	case key.Matches(msg, m.keys.Back):
+		m.viewMode = ViewModeRepoList
+		return m, nil
+
+	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.Right):
+		m.detailTab = DetailTab((int(m.detailTab) + 1) % 3)
+		m.detailCursor = 0
+		return m, nil
+
+	case key.Matches(msg, m.keys.Left):
+		if m.detailTab > 0 {
+			m.detailTab--
+		} else {
+			m.detailTab = DetailTabWorktrees
+		}
+		m.detailCursor = 0
+		return m, nil
+
+	case key.Matches(msg, m.keys.Up):
+		if m.detailCursor > 0 {
+			m.detailCursor--
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.Down):
+		maxIdx := m.detailListLen() - 1
+		if m.detailCursor < maxIdx {
+			m.detailCursor++
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.Top):
+		m.detailCursor = 0
+		return m, nil
+
+	case key.Matches(msg, m.keys.Bottom):
+		maxIdx := m.detailListLen() - 1
+		if maxIdx >= 0 {
+			m.detailCursor = maxIdx
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.Help):
+		m.viewMode = ViewModeHelp
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m Model) detailListLen() int {
+	switch m.detailTab {
+	case DetailTabBranches:
+		return len(m.branches)
+	case DetailTabStashes:
+		return len(m.stashes)
+	case DetailTabWorktrees:
+		return len(m.worktrees)
+	}
+	return 0
+}
+
+func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	modes := models.AllFilterModes()
+
+	switch {
+	case key.Matches(msg, m.keys.Quit):
+		return m, tea.Quit
+
+	case key.Matches(msg, m.keys.Back):
+		m.viewMode = ViewModeRepoList
+		return m, nil
+
+	case key.Matches(msg, m.keys.Up):
+		if m.filterCursor > 0 {
+			m.filterCursor--
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.Down):
+		if m.filterCursor < len(modes)-1 {
+			m.filterCursor++
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.Enter):
+		selectedMode := modes[m.filterCursor]
+		for i := range m.activeFilters {
+			m.activeFilters[i].Enabled = m.activeFilters[i].Mode == selectedMode
+		}
+		m.updateFilteredPaths()
+		m.cursor = 0
+		m.viewMode = ViewModeRepoList
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m Model) handleSortKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Quit):
+		return m, tea.Quit
+
+	case key.Matches(msg, m.keys.Back):
+		m.viewMode = ViewModeRepoList
+		return m, nil
+
+	case key.Matches(msg, m.keys.Up):
+		if m.sortCursor > 0 {
+			m.sortCursor--
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.Down):
+		if m.sortCursor < 3 {
+			m.sortCursor++
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.Enter):
+		m.sortMode = models.SortMode(m.sortCursor)
+		m.updateFilteredPaths()
+		m.viewMode = ViewModeRepoList
+		return m, nil
+
+	case key.Matches(msg, m.keys.Reverse):
+		m.sortReverse = !m.sortReverse
+		m.updateFilteredPaths()
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m Model) handleBatchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Quit):
+		if !m.batchRunning {
+			return m, tea.Quit
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.Back):
+		if !m.batchRunning {
+			m.viewMode = ViewModeRepoList
+		}
 		return m, nil
 	}
 
@@ -202,6 +418,21 @@ func (m *Model) updateFilteredPaths() {
 	}
 }
 
+func (m Model) startBatchTask(taskName string, taskCmd func([]string) tea.Cmd) (tea.Model, tea.Cmd) {
+	if len(m.filteredPaths) == 0 {
+		return m, nil
+	}
+
+	m.viewMode = ViewModeBatchProgress
+	m.batchRunning = true
+	m.batchTask = taskName
+	m.batchResults = nil
+	m.batchProgress = 0
+	m.batchTotal = len(m.filteredPaths)
+
+	return m, taskCmd(m.filteredPaths)
+}
+
 func discoverReposCmd(scanPaths []string, maxDepth int) tea.Cmd {
 	return func() tea.Msg {
 		paths := discovery.DiscoverRepos(scanPaths, maxDepth)
@@ -227,5 +458,23 @@ func loadPRCmd(path string, branch string, upstream string) tea.Cmd {
 	}
 	return func() tea.Msg {
 		return PRLoadedMsg{Path: path, PRInfo: nil}
+	}
+}
+
+func loadDetailCmd(path string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		ops := vcs.GetOperations(path)
+
+		branches, _ := ops.GetBranchList(ctx, path)
+		stashes, _ := ops.GetStashList(ctx, path)
+		worktrees, _ := ops.GetWorktreeList(ctx, path)
+
+		return DetailLoadedMsg{
+			Path:      path,
+			Branches:  branches,
+			Stashes:   stashes,
+			Worktrees: worktrees,
+		}
 	}
 }

@@ -7,15 +7,19 @@ type KeyMap struct {
 	Help   key.Binding
 	Up     key.Binding
 	Down   key.Binding
+	Left   key.Binding
+	Right  key.Binding
 	Top    key.Binding
 	Bottom key.Binding
 	Enter  key.Binding
 	Back   key.Binding
+	Tab    key.Binding
 
 	Refresh key.Binding
 	Filter  key.Binding
 	Sort    key.Binding
 	Search  key.Binding
+	Reverse key.Binding
 
 	FetchAll       key.Binding
 	PruneRemote    key.Binding
@@ -40,6 +44,14 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("j", "down"),
 			key.WithHelp("j/↓", "down"),
 		),
+		Left: key.NewBinding(
+			key.WithKeys("h", "left"),
+			key.WithHelp("h/←", "left"),
+		),
+		Right: key.NewBinding(
+			key.WithKeys("l", "right"),
+			key.WithHelp("l/→", "right"),
+		),
 		Top: key.NewBinding(
 			key.WithKeys("g", "home"),
 			key.WithHelp("g", "top"),
@@ -56,6 +68,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("esc", "backspace"),
 			key.WithHelp("esc", "back"),
 		),
+		Tab: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "next tab"),
+		),
 		Refresh: key.NewBinding(
 			key.WithKeys("r"),
 			key.WithHelp("r", "refresh"),
@@ -71,6 +87,10 @@ func DefaultKeyMap() KeyMap {
 		Search: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "search"),
+		),
+		Reverse: key.NewBinding(
+			key.WithKeys("R"),
+			key.WithHelp("R", "reverse"),
 		),
 		FetchAll: key.NewBinding(
 			key.WithKeys("F"),

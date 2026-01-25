@@ -4,6 +4,7 @@ import (
 	"context"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/kyleking/gh-repo-dashboard/internal/batch"
 	"github.com/kyleking/gh-repo-dashboard/internal/cache"
 	"github.com/kyleking/gh-repo-dashboard/internal/github"
 	"github.com/kyleking/gh-repo-dashboard/internal/vcs"
@@ -49,79 +50,14 @@ func refreshCmd(scanPaths []string, maxDepth int) tea.Cmd {
 	}
 }
 
-type BatchTaskResult struct {
-	Path    string
-	Success bool
-	Message string
-}
-
-type BatchTaskCompleteMsg struct {
-	TaskName string
-	Results  []BatchTaskResult
-}
-
 func batchFetchAllCmd(paths []string) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		var results []BatchTaskResult
-
-		for _, path := range paths {
-			ops := vcs.GetOperations(path)
-			success, msg, _ := ops.FetchAll(ctx, path)
-			results = append(results, BatchTaskResult{
-				Path:    path,
-				Success: success,
-				Message: msg,
-			})
-		}
-
-		return BatchTaskCompleteMsg{
-			TaskName: "Fetch All",
-			Results:  results,
-		}
-	}
+	return batch.RunTask("Fetch All", paths, batch.FetchAll)
 }
 
 func batchPruneRemoteCmd(paths []string) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		var results []BatchTaskResult
-
-		for _, path := range paths {
-			ops := vcs.GetOperations(path)
-			success, msg, _ := ops.PruneRemote(ctx, path)
-			results = append(results, BatchTaskResult{
-				Path:    path,
-				Success: success,
-				Message: msg,
-			})
-		}
-
-		return BatchTaskCompleteMsg{
-			TaskName: "Prune Remote",
-			Results:  results,
-		}
-	}
+	return batch.RunTask("Prune Remote", paths, batch.PruneRemote)
 }
 
 func batchCleanupMergedCmd(paths []string) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		var results []BatchTaskResult
-
-		for _, path := range paths {
-			ops := vcs.GetOperations(path)
-			success, msg, _ := ops.CleanupMergedBranches(ctx, path)
-			results = append(results, BatchTaskResult{
-				Path:    path,
-				Success: success,
-				Message: msg,
-			})
-		}
-
-		return BatchTaskCompleteMsg{
-			TaskName: "Cleanup Merged",
-			Results:  results,
-		}
-	}
+	return batch.RunTask("Cleanup Merged", paths, batch.CleanupMerged)
 }
