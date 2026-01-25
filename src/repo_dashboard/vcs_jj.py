@@ -489,6 +489,14 @@ class JJOperations:
             pass
         return None
 
+    async def get_commit_sha(self, repo_path: Path, ref: str) -> str | None:
+        """Get commit SHA for a given ref (bookmark, change ID, etc.)"""
+        try:
+            output = await self._run_jj_async(repo_path, "log", "-r", ref, "-T", "commit_id", "--no-graph")
+            return output.strip()
+        except Exception:
+            return None
+
     async def fetch_all(self, repo_path: Path) -> tuple[bool, str]:
         """Fetch from all remotes"""
         try:

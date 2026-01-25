@@ -7,7 +7,7 @@ from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, LoadingIndicator, ProgressBar, Static
 
-from repo_dashboard.models import ActiveFilter, CommitInfo, FilterMode, PRDetail, SortMode
+from repo_dashboard.models import ActiveFilter, CommitInfo, FilterMode, PRDetail, SortMode, WorkflowSummary
 
 
 def _format_commits(commits: list[CommitInfo], max_display: int = 10) -> str:
@@ -51,6 +51,34 @@ def _format_pr_detail(pr: PRDetail) -> str:
         "",
         pr.description[:300] + "..." if len(pr.description) > 300 else pr.description,
     ]
+    return "\n".join(lines)
+
+
+def _format_workflow_runs(workflow_summary: WorkflowSummary) -> str:
+    """Format workflow runs with status icons"""
+    if not workflow_summary or not workflow_summary.runs:
+        return "[#a5adcb]No workflow runs[/]"
+
+    lines = []
+    status_map = {
+        "success": ("✓", "#a6da95"),
+        "failure": ("✗", "#ed8796"),
+        "timed_out": ("✗", "#ed8796"),
+        "action_required": ("!", "#eed49f"),
+        "skipped": ("○", "#a5adcb"),
+        "cancelled": ("⊘", "#a5adcb"),
+        "neutral": ("—", "#a5adcb"),
+    }
+
+    for run in workflow_summary.runs:
+        if run.status == "completed" and run.conclusion:
+            icon, color = status_map.get(run.conclusion, ("?", "#a5adcb"))
+            status_text = f"[{color}]{icon}[/] {run.conclusion}"
+        else:
+            status_text = f"[#eed49f]◷[/] {run.status}"
+
+        lines.append(f"{run.workflow_name}: {status_text}")
+
     return "\n".join(lines)
 
 
@@ -107,6 +135,8 @@ class BranchDetailModal(BaseDetailModal):
 
     async def load_content(self) -> str:
         from repo_dashboard.git_ops import get_branch_detail_async
+        from repo_dashboard.github_ops import get_workflow_runs_for_commit
+        from repo_dashboard.vcs_factory import get_vcs_operations
 
         detail = await get_branch_detail_async(
             self.repo_path,
@@ -125,6 +155,16 @@ class BranchDetailModal(BaseDetailModal):
             sections.append("[bold]Pull Request[/]")
             sections.append(_format_pr_detail(detail.pr_detail))
             sections.append("")
+
+        # Workflow section
+        vcs_ops = get_vcs_operations(self.repo_path)
+        commit_sha = await vcs_ops.get_commit_sha(self.repo_path, self.branch_name)
+        if commit_sha:
+            workflow_summary = await get_workflow_runs_for_commit(self.repo_path, commit_sha)
+            if workflow_summary:
+                sections.append("[bold]Workflows[/]")
+                sections.append(_format_workflow_runs(workflow_summary))
+                sections.append("")
 
         # Status section
         status_parts = []

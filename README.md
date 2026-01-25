@@ -55,13 +55,31 @@ The dashboard automatically detects the VCS type and uses appropriate operations
 - `P` - Prune remote branches (filtered repos, git only)
 - `C` - Cleanup merged branches (filtered repos)
 
+## Status Symbols
+
+### Repository Status
+- `↑N` - N commits ahead of tracking branch
+- `↓N` - N commits behind tracking branch
+- `*N` - N uncommitted changes
+- `$N` - N stashed changes
+- `WN` - N worktrees/workspaces
+
+### Workflow Status (GitHub Actions)
+- `✓N` - N successful workflow runs
+- `✗N` - N failed workflow runs
+- `○N` - N skipped workflow runs
+- `◷N` - N pending/in-progress workflow runs
+
+Workflow status is displayed in the Status column for each repository and branch. Detailed workflow information (workflow names and individual run results) is shown when viewing branch details.
+
 ## Features
 
 ### Core Functionality
 - **Multi-VCS Support**: Works with both git and jj repositories
 - **Progressive Loading**: Data loads asynchronously as it becomes available
-- **TTL Caching**: Intelligent caching for PR information and VCS operations
-- **GitHub Integration**: Pull request info and status checks via gh CLI
+- **TTL Caching**: Intelligent caching for PR information, workflow status, and VCS operations
+- **GitHub Integration**: Pull request info, status checks, and workflow runs via gh CLI
+- **Workflow Status**: View GitHub Actions workflow status with icons (✓ success, ✗ failure, ○ skipped, ◷ pending)
 
 ### Filtering & Sorting
 - **Multi-Filter Support**: Combine multiple filters with AND logic
@@ -73,7 +91,8 @@ The dashboard automatically detects the VCS type and uses appropriate operations
 - **Batch Operations**: Fetch, prune, and cleanup across filtered repositories
 - **Worktree Detection**: Git worktrees and jj workspaces
 - **Stash Tracking**: Git stash monitoring (jj doesn't use stashes)
-- **Branch Details**: View branches, PRs, commits, and modified files
+- **Branch Details**: View branches, PRs, commits, workflow runs, and modified files
+- **Workflow Monitoring**: Real-time GitHub Actions workflow status with detailed run information
 
 ### User Experience
 - **Vim-Style Keybindings**: Familiar navigation patterns

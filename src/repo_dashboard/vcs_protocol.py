@@ -70,6 +70,10 @@ class VCSOperations(Protocol):
         """Get upstream repo identifier (e.g., 'owner/repo')"""
         ...
 
+    async def get_commit_sha(self, repo_path: Path, ref: str) -> str | None:
+        """Get commit SHA for a given ref (branch, tag, etc.)"""
+        ...
+
     # Write operations (new - batch maintenance tasks)
     async def fetch_all(self, repo_path: Path) -> tuple[bool, str]:
         """Fetch from all remotes. Returns (success, message)"""
