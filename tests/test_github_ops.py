@@ -124,3 +124,133 @@ def test_get_checks_status_queued_returns_pending() -> None:
 def test_get_checks_status_unknown_status_returns_unknown() -> None:
     checks = [{"conclusion": "SKIPPED"}]
     assert _get_checks_status(checks) == "unknown"
+
+
+def test_get_workflow_runs_for_commit_returns_none_on_failure() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    from repo_dashboard.github_ops import get_workflow_runs_for_commit
+
+    async def run_test():
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 1
+        mock_proc.communicate = AsyncMock(return_value=(b"", b"error"))
+
+        with (
+            patch(
+                "repo_dashboard.github_ops.asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ),
+            patch(
+                "repo_dashboard.github_ops.get_vcs_operations",
+                return_value=GitOperations(),
+            ),
+        ):
+            result = await get_workflow_runs_for_commit(Path("/repo"), "abc123")
+            assert result is None
+
+    asyncio.run(run_test())
+
+
+def test_get_workflow_runs_for_commit_returns_none_on_invalid_json() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    from repo_dashboard.github_ops import get_workflow_runs_for_commit
+
+    async def run_test():
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b"not json", b""))
+
+        with (
+            patch(
+                "repo_dashboard.github_ops.asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ),
+            patch(
+                "repo_dashboard.github_ops.get_vcs_operations",
+                return_value=GitOperations(),
+            ),
+        ):
+            result = await get_workflow_runs_for_commit(Path("/repo"), "abc123")
+            assert result is None
+
+    asyncio.run(run_test())
+
+
+def test_get_workflow_runs_for_commit_returns_summary() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    from repo_dashboard.github_ops import get_workflow_runs_for_commit
+
+    async def run_test():
+        workflow_data = [
+            {
+                "status": "completed",
+                "conclusion": "success",
+                "headSha": "abc123",
+                "workflowName": "CI",
+                "databaseId": 1,
+                "createdAt": "2024-01-01T00:00:00Z",
+                "url": "https://github.com/owner/repo/actions/runs/1",
+            },
+            {
+                "status": "completed",
+                "conclusion": "failure",
+                "headSha": "abc123",
+                "workflowName": "Tests",
+                "databaseId": 2,
+                "createdAt": "2024-01-01T00:00:00Z",
+                "url": "https://github.com/owner/repo/actions/runs/2",
+            },
+            {
+                "status": "completed",
+                "conclusion": "skipped",
+                "headSha": "abc123",
+                "workflowName": "Deploy",
+                "databaseId": 3,
+                "createdAt": "2024-01-01T00:00:00Z",
+                "url": "https://github.com/owner/repo/actions/runs/3",
+            },
+            {
+                "status": "in_progress",
+                "conclusion": None,
+                "headSha": "abc123",
+                "workflowName": "Build",
+                "databaseId": 4,
+                "createdAt": "2024-01-01T00:00:00Z",
+                "url": "https://github.com/owner/repo/actions/runs/4",
+            },
+        ]
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(
+            return_value=(json.dumps(workflow_data).encode(), b"")
+        )
+
+        with (
+            patch(
+                "repo_dashboard.github_ops.asyncio.create_subprocess_exec",
+                return_value=mock_proc,
+            ),
+            patch(
+                "repo_dashboard.github_ops.get_vcs_operations",
+                return_value=GitOperations(),
+            ),
+        ):
+            result = await get_workflow_runs_for_commit(Path("/repo"), "abc123")
+            assert result is not None
+            assert result.success_count == 1
+            assert result.failure_count == 1
+            assert result.skipped_count == 1
+            assert result.pending_count == 1
+            assert len(result.runs) == 4
+            assert result.runs[0].workflow_name == "CI"
+            assert result.runs[0].conclusion == "success"
+            assert result.status_display == "✓1 ✗1 ○1 ◷1"
+
+    asyncio.run(run_test())
