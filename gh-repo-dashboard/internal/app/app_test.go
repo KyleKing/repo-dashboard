@@ -302,6 +302,7 @@ func TestViewModeConstants(t *testing.T) {
 		ViewModeRepoList,
 		ViewModeRepoDetail,
 		ViewModeBranchDetail,
+		ViewModePRDetail,
 		ViewModeHelp,
 		ViewModeFilter,
 		ViewModeSort,
@@ -320,6 +321,7 @@ func TestDetailTabConstants(t *testing.T) {
 		DetailTabBranches,
 		DetailTabStashes,
 		DetailTabWorktrees,
+		DetailTabPRs,
 	}
 
 	for i, tab := range tabs {

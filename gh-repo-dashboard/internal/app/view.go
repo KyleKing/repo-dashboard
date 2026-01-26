@@ -22,6 +22,8 @@ func (m Model) View() string {
 		return m.renderRepoDetail()
 	case ViewModeBranchDetail:
 		return m.renderBranchDetail()
+	case ViewModePRDetail:
+		return m.renderPRDetail()
 	case ViewModeFilter:
 		return m.renderFilterModal()
 	case ViewModeSort:
@@ -194,20 +196,23 @@ func (m Model) renderTable() string {
 		branch   int
 		status   int
 		pr       int
+		prs      int
 		modified int
 	}{
 		name:     20,
 		branch:   15,
 		status:   12,
 		pr:       12,
+		prs:      6,
 		modified: 12,
 	}
 
-	header := fmt.Sprintf("  %-*s  %-*s  %-*s  %-*s  %s",
+	header := fmt.Sprintf("  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 		colWidths.name, "NAME",
 		colWidths.branch, "BRANCH",
 		colWidths.status, "STATUS",
 		colWidths.pr, "PR",
+		colWidths.prs, "PRs",
 		"MODIFIED",
 	)
 	header = styles.HeaderStyle.Render(header)
@@ -248,6 +253,7 @@ func (m Model) renderTableRow(s models.RepoSummary, selected bool, colWidths str
 	branch   int
 	status   int
 	pr       int
+	prs      int
 	modified int
 }) string {
 	cursor := "  "
@@ -286,6 +292,12 @@ func (m Model) renderTableRow(s models.RepoSummary, selected bool, colWidths str
 
 		pr = prNum
 	}
+
+	prCountStr := "—"
+	if count, ok := m.prCount[s.Path]; ok && count > 0 {
+		prCountStr = fmt.Sprintf("%d", count)
+	}
+
 	modified := s.RelativeModified()
 
 	var style lipgloss.Style
@@ -326,13 +338,15 @@ func (m Model) renderTableRow(s models.RepoSummary, selected bool, colWidths str
 	formattedBranch := fmt.Sprintf("%-*s", colWidths.branch, branch)
 	formattedStatus := fmt.Sprintf("%-*s", colWidths.status, status)
 	formattedPR := fmt.Sprintf("%-*s", colWidths.pr, pr)
+	formattedPRCount := fmt.Sprintf("%-*s", colWidths.prs, prCountStr)
 
-	row := fmt.Sprintf("%s%s  %s  %s  %s  %s",
+	row := fmt.Sprintf("%s%s  %s  %s  %s  %s  %s",
 		cursor,
 		nameStyle.Render(formattedName),
 		branchStyle.Render(formattedBranch),
 		statusStyle.Render(formattedStatus),
 		prStyle.Render(formattedPR),
+		style.Render(formattedPRCount),
 		style.Render(modified),
 	)
 
@@ -463,11 +477,15 @@ func (m Model) renderRepoDetail() string {
 		b.WriteString(m.renderStashList())
 	case DetailTabWorktrees:
 		b.WriteString(m.renderWorktreeList())
+	case DetailTabPRs:
+		b.WriteString(m.renderPRList())
 	}
 
 	footer := "tab: switch tabs  j/k: navigate  esc: back"
 	if m.detailTab == DetailTabBranches {
 		footer = "tab: switch tabs  j/k: navigate  enter: view branch  esc: back"
+	} else if m.detailTab == DetailTabPRs {
+		footer = "tab: switch tabs  j/k: navigate  enter: view PR  esc: back"
 	}
 
 	contentLines := strings.Count(b.String(), "\n")
@@ -500,6 +518,7 @@ func (m Model) renderDetailTabs() string {
 		{"Branches", DetailTabBranches, len(m.branches)},
 		{"Stashes", DetailTabStashes, len(m.stashes)},
 		{worktreeLabel, DetailTabWorktrees, len(m.worktrees)},
+		{"PRs", DetailTabPRs, len(m.prs)},
 	}
 
 	var parts []string
@@ -705,6 +724,81 @@ func (m Model) renderWorktreeList() string {
 			style.Render(formattedPath),
 			branchStyleLocal.Render(formattedBranch),
 			style.Render(status),
+		)
+		rows = append(rows, row)
+	}
+
+	return strings.Join(rows, "\n")
+}
+
+func (m Model) renderPRList() string {
+	if len(m.prs) == 0 {
+		emptyStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(styles.Surface1).
+			Padding(2, 4).
+			Foreground(styles.Subtext0)
+		return emptyStyle.Render("No open pull requests")
+	}
+
+	var rows []string
+	header := fmt.Sprintf("  %-8s  %-40s  %-10s  %-18s  %s",
+		"NUMBER", "TITLE", "STATE", "REVIEW", "BRANCH")
+	rows = append(rows, styles.HeaderStyle.Render(header))
+
+	for i, pr := range m.prs {
+		cursor := "  "
+		if i == m.detailCursor {
+			cursor = "> "
+		}
+
+		number := fmt.Sprintf("#%d", pr.Number)
+		title := truncate(pr.Title, 40)
+		state := pr.StatusDisplay()
+		review := pr.ReviewStatus()
+		branch := truncate(pr.HeadRef, 20)
+
+		var rowStyle lipgloss.Style
+		if i == m.detailCursor {
+			rowStyle = styles.SelectedRowStyle
+		} else {
+			rowStyle = styles.TableRowStyle
+		}
+
+		stateStyle := styles.PROpenStyle
+		if pr.IsDraft {
+			stateStyle = styles.PRDraftStyle
+		} else if state == "MERGED" {
+			stateStyle = styles.PRMergedStyle
+		} else if state == "CLOSED" {
+			stateStyle = styles.ErrorStyle
+		}
+		if i == m.detailCursor {
+			stateStyle = stateStyle.Background(styles.Surface0)
+		}
+
+		reviewStyle := styles.SubtitleStyle
+		if review == "approved" {
+			reviewStyle = styles.CleanStyle
+		} else if review == "changes requested" {
+			reviewStyle = styles.ErrorStyle
+		}
+		if i == m.detailCursor {
+			reviewStyle = reviewStyle.Background(styles.Surface0)
+		}
+
+		branchStyleLocal := styles.BranchStyle
+		if i == m.detailCursor {
+			branchStyleLocal = branchStyleLocal.Background(styles.Surface0)
+		}
+
+		row := fmt.Sprintf("%s%-8s  %-40s  %s  %-18s  %s",
+			cursor,
+			rowStyle.Render(number),
+			rowStyle.Render(title),
+			stateStyle.Render(fmt.Sprintf("%-10s", state)),
+			reviewStyle.Render(review),
+			branchStyleLocal.Render(branch),
 		)
 		rows = append(rows, row)
 	}
@@ -1253,6 +1347,141 @@ func (m Model) renderBranchDetail() string {
 		b.WriteString("\n")
 	}
 	b.WriteString(styles.FooterStyle.Render("esc: back  ?: help"))
+
+	return b.String()
+}
+
+func (m Model) renderPRDetail() string {
+	var b strings.Builder
+
+	summary, _ := m.summaries[m.selectedRepo]
+	home := styles.SubtitleStyle.Render("Repos")
+	sep := styles.SubtitleStyle.Render(" > ")
+	repo := styles.BranchStyle.Render(summary.Name())
+	prTitle := styles.TitleStyle.Render(fmt.Sprintf("PR #%d", m.prDetail.Number))
+
+	b.WriteString(home + sep + repo + sep + prTitle)
+	b.WriteString("\n\n")
+
+	sectionStyle := lipgloss.NewStyle().
+		Foreground(styles.Blue).
+		Bold(true).
+		PaddingLeft(1).
+		PaddingTop(1)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(styles.Subtext0).
+		Width(16)
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(styles.Text).
+		PaddingLeft(2)
+
+	b.WriteString(sectionStyle.Render("Pull Request"))
+	b.WriteString("\n")
+
+	b.WriteString(valueStyle.Render(labelStyle.Render("Title:") + " " + m.prDetail.Title))
+	b.WriteString("\n")
+
+	b.WriteString(valueStyle.Render(labelStyle.Render("Author:") + " " + m.prDetail.Author))
+	b.WriteString("\n")
+
+	b.WriteString(valueStyle.Render(
+		labelStyle.Render("Branch:") + " " +
+			styles.BranchStyle.Render(m.prDetail.HeadRef) + " → " +
+			styles.BranchStyle.Render(m.prDetail.BaseRef),
+	))
+	b.WriteString("\n")
+
+	stateStyle := styles.PROpenStyle
+	if m.prDetail.IsDraft {
+		stateStyle = styles.PRDraftStyle
+	} else if m.prDetail.State == "MERGED" {
+		stateStyle = styles.PRMergedStyle
+	} else if m.prDetail.State == "CLOSED" {
+		stateStyle = styles.ErrorStyle
+	}
+
+	b.WriteString(valueStyle.Render(
+		labelStyle.Render("State:") + " " + stateStyle.Render(m.prDetail.StatusDisplay()),
+	))
+	b.WriteString("\n")
+
+	reviewStyle := styles.SubtitleStyle
+	reviewStatus := m.prDetail.ReviewStatus()
+	if reviewStatus == "approved" {
+		reviewStyle = styles.CleanStyle
+	} else if reviewStatus == "changes requested" {
+		reviewStyle = styles.ErrorStyle
+	}
+
+	b.WriteString(valueStyle.Render(
+		labelStyle.Render("Review:") + " " + reviewStyle.Render(reviewStatus),
+	))
+	b.WriteString("\n")
+
+	b.WriteString(valueStyle.Render(
+		labelStyle.Render("Changes:") + " " +
+			styles.CleanStyle.Render(fmt.Sprintf("+%d", m.prDetail.Additions)) + " " +
+			styles.ErrorStyle.Render(fmt.Sprintf("-%d", m.prDetail.Deletions)),
+	))
+	b.WriteString("\n")
+
+	if m.prDetail.Comments > 0 {
+		b.WriteString(valueStyle.Render(
+			labelStyle.Render("Comments:") + " " + fmt.Sprintf("%d", m.prDetail.Comments),
+		))
+		b.WriteString("\n")
+	}
+
+	if !m.prDetail.CreatedAt.IsZero() {
+		b.WriteString(valueStyle.Render(
+			labelStyle.Render("Created:") + " " + m.prDetail.RelativeCreated(),
+		))
+		b.WriteString("\n")
+	}
+
+	if !m.prDetail.UpdatedAt.IsZero() {
+		b.WriteString(valueStyle.Render(
+			labelStyle.Render("Updated:") + " " + m.prDetail.RelativeUpdated(),
+		))
+		b.WriteString("\n")
+	}
+
+	if m.prDetail.Body != "" {
+		b.WriteString("\n")
+		b.WriteString(sectionStyle.Render("Description"))
+		b.WriteString("\n")
+
+		desc := m.prDetail.Body
+		if len(desc) > 400 {
+			desc = desc[:400] + "..."
+		}
+		b.WriteString(valueStyle.Render(desc))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(sectionStyle.Render("Actions"))
+	b.WriteString("\n")
+
+	actionPadding := lipgloss.NewStyle().PaddingLeft(2)
+	actions := []string{
+		styles.FooterKeyStyle.Render("o") + styles.FooterDescStyle.Render(" open in browser"),
+		styles.FooterKeyStyle.Render("y") + styles.FooterDescStyle.Render(" copy URL"),
+	}
+	b.WriteString(actionPadding.Render(strings.Join(actions, "    ")))
+	b.WriteString("\n")
+
+	contentLines := strings.Count(b.String(), "\n")
+	paddingNeeded := m.height - contentLines - 2
+	if paddingNeeded > 0 {
+		b.WriteString(strings.Repeat("\n", paddingNeeded))
+	}
+
+	footer := styles.FooterKeyStyle.Render("esc") + styles.FooterDescStyle.Render(" back  ") +
+		styles.FooterKeyStyle.Render("?") + styles.FooterDescStyle.Render(" help")
+	b.WriteString(styles.FooterStyle.Render(footer))
 
 	return b.String()
 }

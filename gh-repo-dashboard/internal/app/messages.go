@@ -40,6 +40,7 @@ type DetailLoadedMsg struct {
 	Branches  []models.BranchInfo
 	Stashes   []models.StashDetail
 	Worktrees []models.WorktreeInfo
+	PRs       []models.PRInfo
 }
 
 type BranchDetailLoadedMsg struct {
@@ -74,4 +75,22 @@ type BatchProgressMsg struct {
 type BatchCompleteMsg struct {
 	TaskName string
 	Results  []BatchResult
+}
+
+type PRListLoadedMsg struct {
+	Path  string
+	PRs   []models.PRInfo
+	Error error
+}
+
+type PRDetailLoadedMsg struct {
+	Path     string
+	PRNumber int
+	Detail   models.PRDetail
+	Error    error
+}
+
+type PRCountLoadedMsg struct {
+	Path  string
+	Count int
 }

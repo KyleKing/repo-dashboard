@@ -8,6 +8,7 @@ import (
 	"github.com/kyleking/gh-repo-dashboard/internal/batch"
 	"github.com/kyleking/gh-repo-dashboard/internal/discovery"
 	"github.com/kyleking/gh-repo-dashboard/internal/filters"
+	"github.com/kyleking/gh-repo-dashboard/internal/github"
 	"github.com/kyleking/gh-repo-dashboard/internal/models"
 	"github.com/kyleking/gh-repo-dashboard/internal/vcs"
 )
@@ -33,6 +34,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleDetailKey(msg)
 		case ViewModeBranchDetail:
 			return m.handleBranchDetailKey(msg)
+		case ViewModePRDetail:
+			return m.handlePRDetailKey(msg)
 		case ViewModeBatchProgress:
 			return m.handleBatchKey(msg)
 		default:
@@ -59,7 +62,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RepoSummaryLoadedMsg:
 		m.loadedCount++
 
-		var prCmd tea.Cmd
+		var cmds []tea.Cmd
 		if msg.Error != nil {
 			summary := models.RepoSummary{
 				Path:    msg.Path,
@@ -69,7 +72,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.summaries[msg.Path] = summary
 		} else {
 			m.summaries[msg.Path] = msg.Summary
-			prCmd = loadPRCmd(msg.Path, msg.Summary.Branch, msg.Summary.Upstream)
+			cmds = append(cmds, loadPRCmd(msg.Path, msg.Summary.Branch, msg.Summary.Upstream))
+			cmds = append(cmds, loadPRCountCmd(msg.Path, msg.Summary.Upstream))
 		}
 
 		if m.loadedCount >= m.loadingCount {
@@ -77,7 +81,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateFilteredPaths()
 		}
 
-		return m, prCmd
+		return m, tea.Batch(cmds...)
 
 	case PRLoadedMsg:
 		if summary, ok := m.summaries[msg.Path]; ok {
@@ -98,6 +102,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.branches = msg.Branches
 			m.stashes = msg.Stashes
 			m.worktrees = msg.Worktrees
+			m.prs = msg.PRs
 		}
 		return m, nil
 
@@ -105,6 +110,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Path == m.selectedRepo {
 			m.branchDetail = msg.Detail
 		}
+		return m, nil
+
+	case PRListLoadedMsg:
+		if msg.Path == m.selectedRepo {
+			m.prs = msg.PRs
+		}
+		return m, nil
+
+	case PRDetailLoadedMsg:
+		if msg.Path == m.selectedRepo && msg.PRNumber == m.selectedPR.Number {
+			m.prDetail = msg.Detail
+		}
+		return m, nil
+
+	case PRCountLoadedMsg:
+		if m.prCount == nil {
+			m.prCount = make(map[string]int)
+		}
+		m.prCount[msg.Path] = msg.Count
 		return m, nil
 
 	case PRCreatedMsg:
@@ -247,16 +271,16 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.Right):
-		m.detailTab = DetailTab((int(m.detailTab) + 1) % 3)
+		m.detailTab = DetailTab((int(m.detailTab) + 1) % 4)
 		m.detailCursor = 0
 		return m, nil
 
 	case key.Matches(msg, m.keys.Left):
-		if m.detailTab > 0 {
-			m.detailTab--
-		} else {
-			m.detailTab = DetailTabWorktrees
+		newTab := int(m.detailTab) - 1
+		if newTab < 0 {
+			newTab = 3
 		}
+		m.detailTab = DetailTab(newTab)
 		m.detailCursor = 0
 		return m, nil
 
@@ -289,6 +313,10 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selectedBranch = m.branches[m.detailCursor]
 			m.viewMode = ViewModeBranchDetail
 			return m, loadBranchDetailCmd(m.selectedRepo, m.selectedBranch.Name)
+		} else if m.detailTab == DetailTabPRs && m.detailCursor < len(m.prs) {
+			m.selectedPR = m.prs[m.detailCursor]
+			m.viewMode = ViewModePRDetail
+			return m, loadPRDetailCmd(m.selectedRepo, m.selectedPR.Number)
 		}
 		return m, nil
 
@@ -337,8 +365,39 @@ func (m Model) detailListLen() int {
 		return len(m.stashes)
 	case DetailTabWorktrees:
 		return len(m.worktrees)
+	case DetailTabPRs:
+		return len(m.prs)
 	}
 	return 0
+}
+
+func (m Model) handlePRDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Quit):
+		return m, tea.Quit
+
+	case key.Matches(msg, m.keys.Back):
+		m.viewMode = ViewModeRepoDetail
+		return m, nil
+
+	case key.Matches(msg, m.keys.OpenURL):
+		if m.prDetail.URL != "" {
+			return m, openURLCmd(m.prDetail.URL)
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.CopyBranch):
+		if m.prDetail.URL != "" {
+			return m, copyToClipboardCmd(m.prDetail.URL)
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.Help):
+		m.viewMode = ViewModeHelp
+		return m, nil
+	}
+
+	return m, nil
 }
 
 func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -563,11 +622,18 @@ func loadDetailCmd(path string) tea.Cmd {
 		stashes, _ := ops.GetStashList(ctx, path)
 		worktrees, _ := ops.GetWorktreeList(ctx, path)
 
+		summary, _ := ops.GetRepoSummary(ctx, path)
+		var prs []models.PRInfo
+		if summary.Upstream != "" {
+			prs, _ = github.GetPRsForRepo(ctx, path, summary.Upstream)
+		}
+
 		return DetailLoadedMsg{
 			Path:      path,
 			Branches:  branches,
 			Stashes:   stashes,
 			Worktrees: worktrees,
+			PRs:       prs,
 		}
 	}
 }
@@ -607,6 +673,54 @@ func loadBranchDetailCmd(repoPath string, branchName string) tea.Cmd {
 		return BranchDetailLoadedMsg{
 			Path:   repoPath,
 			Detail: detail,
+		}
+	}
+}
+
+func loadPRCountCmd(path string, upstream string) tea.Cmd {
+	if upstream == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx := context.Background()
+		count, err := github.GetPRCount(ctx, path, upstream)
+		if err != nil {
+			return PRCountLoadedMsg{Path: path, Count: 0}
+		}
+		return PRCountLoadedMsg{Path: path, Count: count}
+	}
+}
+
+func loadPRListCmd(path string, upstream string) tea.Cmd {
+	if upstream == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx := context.Background()
+		prs, err := github.GetPRsForRepo(ctx, path, upstream)
+		return PRListLoadedMsg{
+			Path:  path,
+			PRs:   prs,
+			Error: err,
+		}
+	}
+}
+
+func loadPRDetailCmd(repoPath string, prNumber int) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		detail, err := github.GetPRDetail(ctx, repoPath, prNumber)
+		if err != nil {
+			return PRDetailLoadedMsg{
+				Path:     repoPath,
+				PRNumber: prNumber,
+				Error:    err,
+			}
+		}
+		return PRDetailLoadedMsg{
+			Path:     repoPath,
+			PRNumber: prNumber,
+			Detail:   *detail,
 		}
 	}
 }

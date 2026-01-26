@@ -69,6 +69,8 @@ func (c *TTLCache[T]) Delete(key string) {
 
 var (
 	PRCache       = NewTTLCache[*models.PRInfo](5 * time.Minute)
+	PRListCache   = NewTTLCache[[]models.PRInfo](5 * time.Minute)
+	PRDetailCache = NewTTLCache[*models.PRDetail](5 * time.Minute)
 	BranchCache   = NewTTLCache[[]models.BranchInfo](5 * time.Minute)
 	CommitCache   = NewTTLCache[[]models.CommitInfo](5 * time.Minute)
 	WorkflowCache = NewTTLCache[*models.WorkflowSummary](2 * time.Minute)
@@ -76,6 +78,8 @@ var (
 
 func ClearAll() {
 	PRCache.Clear()
+	PRListCache.Clear()
+	PRDetailCache.Clear()
 	BranchCache.Clear()
 	CommitCache.Clear()
 	WorkflowCache.Clear()

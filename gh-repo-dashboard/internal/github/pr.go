@@ -3,8 +3,11 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kyleking/gh-repo-dashboard/internal/cache"
 	"github.com/kyleking/gh-repo-dashboard/internal/models"
@@ -99,10 +102,15 @@ func parseChecks(checks []statusCheck) models.ChecksStatus {
 }
 
 func GetPRDetail(ctx context.Context, repoPath string, prNumber int) (*models.PRDetail, error) {
+	cacheKey := fmt.Sprintf("%s:pr:%d", repoPath, prNumber)
+	if cached, ok := cache.PRDetailCache.Get(cacheKey); ok {
+		return cached, nil
+	}
+
 	env := vcs.GetGitHubEnv(repoPath)
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", string(rune(prNumber)),
-		"--json", "number,title,state,url,isDraft,mergeStateStatus,headRefName,baseRefName,body,author,createdAt,updatedAt,additions,deletions,comments")
+	cmd := exec.CommandContext(ctx, "gh", "pr", "view", strconv.Itoa(prNumber),
+		"--json", "number,title,state,url,isDraft,mergeStateStatus,headRefName,baseRefName,body,author,createdAt,updatedAt,additions,deletions,comments,reviewDecision")
 	cmd.Dir = repoPath
 	if len(env) > 0 {
 		cmd.Env = append(cmd.Environ(), env...)
@@ -114,37 +122,121 @@ func GetPRDetail(ctx context.Context, repoPath string, prNumber int) (*models.PR
 	}
 
 	var resp struct {
-		prResponse
-		Body      string `json:"body"`
-		Author    struct {
+		Number         int    `json:"number"`
+		Title          string `json:"title"`
+		State          string `json:"state"`
+		URL            string `json:"url"`
+		IsDraft        bool   `json:"isDraft"`
+		MergeStateStatus string `json:"mergeStateStatus"`
+		HeadRefName    string `json:"headRefName"`
+		BaseRefName    string `json:"baseRefName"`
+		Body           string `json:"body"`
+		Author         struct {
 			Login string `json:"login"`
 		} `json:"author"`
-		CreatedAt string `json:"createdAt"`
-		UpdatedAt string `json:"updatedAt"`
-		Additions int    `json:"additions"`
-		Deletions int    `json:"deletions"`
-		Comments  int    `json:"comments"`
+		CreatedAt      string `json:"createdAt"`
+		UpdatedAt      string `json:"updatedAt"`
+		Additions      int    `json:"additions"`
+		Deletions      int    `json:"deletions"`
+		Comments       int    `json:"comments"`
+		ReviewDecision string `json:"reviewDecision"`
 	}
 
 	if err := json.Unmarshal(out, &resp); err != nil {
 		return nil, err
 	}
 
-	return &models.PRDetail{
+	createdAt, _ := time.Parse(time.RFC3339, resp.CreatedAt)
+	updatedAt, _ := time.Parse(time.RFC3339, resp.UpdatedAt)
+
+	detail := &models.PRDetail{
 		PRInfo: models.PRInfo{
-			Number:    resp.Number,
-			Title:     resp.Title,
-			State:     resp.State,
-			URL:       resp.URL,
-			IsDraft:   resp.IsDraft,
-			Mergeable: resp.MergeStateStatus,
-			HeadRef:   resp.HeadRefName,
-			BaseRef:   resp.BaseRefName,
+			Number:         resp.Number,
+			Title:          resp.Title,
+			State:          resp.State,
+			URL:            resp.URL,
+			IsDraft:        resp.IsDraft,
+			Mergeable:      resp.MergeStateStatus,
+			HeadRef:        resp.HeadRefName,
+			BaseRef:        resp.BaseRefName,
+			ReviewDecision: resp.ReviewDecision,
 		},
 		Body:      resp.Body,
 		Author:    resp.Author.Login,
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
 		Additions: resp.Additions,
 		Deletions: resp.Deletions,
 		Comments:  resp.Comments,
-	}, nil
+	}
+
+	cache.PRDetailCache.Set(cacheKey, detail)
+	return detail, nil
+}
+
+func GetPRsForRepo(ctx context.Context, repoPath string, upstream string) ([]models.PRInfo, error) {
+	if upstream == "" {
+		return []models.PRInfo{}, nil
+	}
+
+	cacheKey := upstream + ":all_prs"
+	if cached, ok := cache.PRListCache.Get(cacheKey); ok {
+		return cached, nil
+	}
+
+	env := vcs.GetGitHubEnv(repoPath)
+
+	cmd := exec.CommandContext(ctx, "gh", "pr", "list",
+		"--json", "number,title,state,url,isDraft,headRefName,baseRefName,reviewDecision",
+		"--limit", "100")
+	cmd.Dir = repoPath
+	if len(env) > 0 {
+		cmd.Env = append(cmd.Environ(), env...)
+	}
+
+	out, err := cmd.Output()
+	if err != nil {
+		cache.PRListCache.Set(cacheKey, []models.PRInfo{})
+		return []models.PRInfo{}, err
+	}
+
+	var prList []struct {
+		Number         int    `json:"number"`
+		Title          string `json:"title"`
+		State          string `json:"state"`
+		URL            string `json:"url"`
+		IsDraft        bool   `json:"isDraft"`
+		HeadRefName    string `json:"headRefName"`
+		BaseRefName    string `json:"baseRefName"`
+		ReviewDecision string `json:"reviewDecision"`
+	}
+
+	if err := json.Unmarshal(out, &prList); err != nil {
+		return []models.PRInfo{}, err
+	}
+
+	result := make([]models.PRInfo, 0, len(prList))
+	for _, pr := range prList {
+		result = append(result, models.PRInfo{
+			Number:         pr.Number,
+			Title:          pr.Title,
+			State:          pr.State,
+			URL:            pr.URL,
+			IsDraft:        pr.IsDraft,
+			HeadRef:        pr.HeadRefName,
+			BaseRef:        pr.BaseRefName,
+			ReviewDecision: pr.ReviewDecision,
+		})
+	}
+
+	cache.PRListCache.Set(cacheKey, result)
+	return result, nil
+}
+
+func GetPRCount(ctx context.Context, repoPath string, upstream string) (int, error) {
+	prs, err := GetPRsForRepo(ctx, repoPath, upstream)
+	if err != nil {
+		return 0, err
+	}
+	return len(prs), nil
 }

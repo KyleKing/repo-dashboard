@@ -13,6 +13,7 @@ const (
 	ViewModeRepoList ViewMode = iota
 	ViewModeRepoDetail
 	ViewModeBranchDetail
+	ViewModePRDetail
 	ViewModeHelp
 	ViewModeFilter
 	ViewModeSort
@@ -25,6 +26,7 @@ const (
 	DetailTabBranches DetailTab = iota
 	DetailTabStashes
 	DetailTabWorktrees
+	DetailTabPRs
 )
 
 type Model struct {
@@ -59,6 +61,11 @@ type Model struct {
 
 	selectedBranch models.BranchInfo
 	branchDetail   models.BranchDetail
+
+	prs        []models.PRInfo
+	prCount    map[string]int
+	selectedPR models.PRInfo
+	prDetail   models.PRDetail
 
 	filterCursor int
 	sortCursor   int
@@ -96,6 +103,7 @@ func New(scanPaths []string, maxDepth int) Model {
 		scanPaths:     scanPaths,
 		maxDepth:      maxDepth,
 		summaries:     make(map[string]models.RepoSummary),
+		prCount:       make(map[string]int),
 		activeFilters: filters,
 		activeSorts:   sorts,
 		searchInput:   ti,
