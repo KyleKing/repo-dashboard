@@ -22,17 +22,35 @@ func NewActiveFilter(mode FilterMode) ActiveFilter {
 	}
 }
 
+type SortDirection int
+
+const (
+	SortDirectionOff SortDirection = iota
+	SortDirectionAsc
+	SortDirectionDesc
+)
+
+func (d SortDirection) String() string {
+	switch d {
+	case SortDirectionAsc:
+		return "ASC"
+	case SortDirectionDesc:
+		return "DESC"
+	default:
+		return ""
+	}
+}
+
 type ActiveSort struct {
-	Mode     SortMode
-	Enabled  bool
-	Priority int
-	Reverse  bool
+	Mode      SortMode
+	Direction SortDirection
+	Priority  int
 }
 
 func (s ActiveSort) DisplayName() string {
 	name := s.Mode.String()
-	if s.Reverse {
-		name += " (rev)"
+	if s.Direction != SortDirectionOff {
+		name += " (" + s.Direction.String() + ")"
 	}
 	return name
 }
@@ -41,11 +59,14 @@ func (s ActiveSort) ShortKey() string {
 	return s.Mode.ShortKey()
 }
 
+func (s ActiveSort) IsEnabled() bool {
+	return s.Direction != SortDirectionOff
+}
+
 func NewActiveSort(mode SortMode, priority int) ActiveSort {
 	return ActiveSort{
-		Mode:     mode,
-		Enabled:  false,
-		Priority: priority,
-		Reverse:  false,
+		Mode:      mode,
+		Direction: SortDirectionOff,
+		Priority:  priority,
 	}
 }

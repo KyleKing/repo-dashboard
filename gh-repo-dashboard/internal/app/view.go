@@ -94,17 +94,17 @@ func (m Model) renderBreadcrumbs() string {
 		home := styles.SubtitleStyle.Render("Repos")
 		sep := styles.SubtitleStyle.Render(" > ")
 		repo := styles.BranchStyle.Render(summary.Name())
-		branch := styles.TitleStyle.Render(m.selectedBranch.Name)
+		branch := styles.TitleStyle.Render(m.branchDetail.Branch.Name)
 
 		var badges []string
-		if m.selectedBranch.IsCurrent {
+		if m.branchDetail.Branch.IsCurrent {
 			badges = append(badges, styles.Badge("current", styles.PROpenStyle))
 		}
-		if m.selectedBranch.Ahead > 0 {
-			badges = append(badges, styles.Badge(fmt.Sprintf("↑%d", m.selectedBranch.Ahead), styles.AheadStyle))
+		if m.branchDetail.Branch.Ahead > 0 {
+			badges = append(badges, styles.Badge(fmt.Sprintf("↑%d", m.branchDetail.Branch.Ahead), styles.AheadStyle))
 		}
-		if m.selectedBranch.Behind > 0 {
-			badges = append(badges, styles.Badge(fmt.Sprintf("↓%d", m.selectedBranch.Behind), styles.BehindStyle))
+		if m.branchDetail.Branch.Behind > 0 {
+			badges = append(badges, styles.Badge(fmt.Sprintf("↓%d", m.branchDetail.Branch.Behind), styles.BehindStyle))
 		}
 
 		return home + sep + repo + sep + branch + "  " + strings.Join(badges, " ")
@@ -152,7 +152,7 @@ func (m Model) renderStatusBar() string {
 
 	enabledSorts := []models.ActiveSort{}
 	for _, s := range m.activeSorts {
-		if s.Enabled {
+		if s.IsEnabled() {
 			enabledSorts = append(enabledSorts, s)
 		}
 	}
@@ -160,12 +160,8 @@ func (m Model) renderStatusBar() string {
 	if len(enabledSorts) > 0 {
 		for i := 0; i < len(enabledSorts); i++ {
 			for _, s := range m.activeSorts {
-				if s.Enabled && s.Priority == i {
-					label := s.Mode.String()
-					if s.Reverse {
-						label += " (rev)"
-					}
-					parts = append(parts, styles.Badge(label, styles.SortBadgeStyle))
+				if s.IsEnabled() && s.Priority == i {
+					parts = append(parts, styles.Badge(s.DisplayName(), styles.SortBadgeStyle))
 					break
 				}
 			}
@@ -203,7 +199,7 @@ func (m Model) renderTable() string {
 		name:     20,
 		branch:   15,
 		status:   12,
-		pr:       8,
+		pr:       12,
 		modified: 12,
 	}
 
@@ -264,7 +260,31 @@ func (m Model) renderTableRow(s models.RepoSummary, selected bool, colWidths str
 	status := s.StatusSummary()
 	pr := "—"
 	if s.PRInfo != nil {
-		pr = fmt.Sprintf("#%d", s.PRInfo.Number)
+		// Show PR number with review and CI indicators
+		prNum := fmt.Sprintf("#%d", s.PRInfo.Number)
+
+		// Add review status indicator
+		reviewStatus := s.PRInfo.ReviewStatus()
+		if reviewStatus == "approved" {
+			prNum += " ✓"
+		} else if reviewStatus == "changes requested" {
+			prNum += " ✗"
+		}
+
+		// Add CI status indicator
+		if s.PRInfo.Checks.Total > 0 {
+			checkStatus := s.PRInfo.Checks.Summary()
+			if checkStatus == "failing" {
+				prNum += " ⚠"
+			}
+		} else if s.WorkflowInfo != nil {
+			wfStatus := s.WorkflowInfo.StatusDisplay()
+			if wfStatus == "failing" {
+				prNum += " ⚠"
+			}
+		}
+
+		pr = prNum
 	}
 	modified := s.RelativeModified()
 
@@ -373,8 +393,8 @@ func (m Model) renderHelp() string {
 		{
 			"Filtering & Sorting",
 			[]struct{ key, desc string }{
-				{"f", "Filter menu (multi-select, !=cycle, *=reset)"},
-				{"s", "Sort menu (multi-select, R=reverse, *=reset)"},
+				{"f", "Filter menu (enter/key cycles, *=reset)"},
+				{"s", "Sort menu (enter/key cycles, [/]=reorder, *=reset)"},
 				{"/", "Search repositories"},
 			},
 		},
@@ -464,6 +484,14 @@ func (m Model) renderRepoDetail() string {
 }
 
 func (m Model) renderDetailTabs() string {
+	summary, _ := m.summaries[m.selectedRepo]
+	isJJ := summary.VCSType == models.VCSTypeJJ
+
+	worktreeLabel := "Worktrees"
+	if isJJ {
+		worktreeLabel = "Workspaces"
+	}
+
 	tabs := []struct {
 		name  string
 		tab   DetailTab
@@ -471,20 +499,25 @@ func (m Model) renderDetailTabs() string {
 	}{
 		{"Branches", DetailTabBranches, len(m.branches)},
 		{"Stashes", DetailTabStashes, len(m.stashes)},
-		{"Worktrees", DetailTabWorktrees, len(m.worktrees)},
+		{worktreeLabel, DetailTabWorktrees, len(m.worktrees)},
 	}
 
 	var parts []string
 	for _, t := range tabs {
 		label := fmt.Sprintf("%s (%d)", t.name, t.count)
 		if t.tab == m.detailTab {
-			parts = append(parts, styles.Badge(label, styles.SortBadgeStyle))
+			parts = append(parts, styles.TabActiveStyle.Render(label))
 		} else {
-			parts = append(parts, styles.Badge(label, styles.CountBadgeStyle))
+			parts = append(parts, styles.TabInactiveStyle.Render(label))
 		}
 	}
 
-	return strings.Join(parts, " ")
+	tabRow := strings.Join(parts, styles.TabSeparatorStyle.Render(" │ "))
+
+	ruleWidth := lipgloss.Width(tabRow)
+	rule := styles.SubtitleStyle.Render(strings.Repeat("─", ruleWidth))
+
+	return tabRow + "\n" + rule
 }
 
 func (m Model) renderBranchList() string {
@@ -608,13 +641,21 @@ func (m Model) renderStashList() string {
 }
 
 func (m Model) renderWorktreeList() string {
+	summary, _ := m.summaries[m.selectedRepo]
+	isJJ := summary.VCSType == models.VCSTypeJJ
+
 	if len(m.worktrees) == 0 {
 		emptyStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(styles.Surface1).
 			Padding(2, 4).
 			Foreground(styles.Subtext0)
-		return emptyStyle.Render("No worktrees/workspaces found")
+
+		emptyMsg := "No worktrees found\n\nWorktrees allow working on multiple branches simultaneously."
+		if isJJ {
+			emptyMsg = "No workspaces found\n\nWorkspaces (jj's version of worktrees) allow working on multiple\nchanges simultaneously in separate working directories."
+		}
+		return emptyStyle.Render(emptyMsg)
 	}
 
 	var rows []string
@@ -747,8 +788,7 @@ func (m Model) renderFilterModal() string {
 
 	b.WriteString("\n")
 	helpLines := []string{
-		styles.FooterKeyStyle.Render("enter/key") + styles.FooterDescStyle.Render(" toggle"),
-		styles.FooterKeyStyle.Render("!") + styles.FooterDescStyle.Render(" cycle (off/on/NOT)"),
+		styles.FooterKeyStyle.Render("enter/key") + styles.FooterDescStyle.Render(" cycle (off/on/NOT)"),
 		styles.FooterKeyStyle.Render("*") + styles.FooterDescStyle.Render(" reset"),
 		styles.FooterKeyStyle.Render("esc") + styles.FooterDescStyle.Render(" close"),
 	}
@@ -795,51 +835,73 @@ func (m Model) renderSortModal() string {
 	b.WriteString(styles.TitleStyle.Render("Sort Repositories"))
 	b.WriteString("\n\n")
 
-	modes := models.AllSortModes()
+	sortsByPriority := make([]models.ActiveSort, 0)
+	for _, s := range m.activeSorts {
+		if s.IsEnabled() {
+			sortsByPriority = append(sortsByPriority, s)
+		}
+	}
+
+	for i := 0; i < len(sortsByPriority); i++ {
+		for j := range sortsByPriority {
+			if sortsByPriority[j].Priority == i {
+				break
+			}
+			if j == len(sortsByPriority)-1 {
+				for k := range sortsByPriority {
+					if sortsByPriority[k].Priority > i {
+						sortsByPriority[k].Priority--
+					}
+				}
+			}
+		}
+	}
+
+	inactiveSorts := make([]models.ActiveSort, 0)
+	for _, s := range m.activeSorts {
+		if !s.IsEnabled() {
+			inactiveSorts = append(inactiveSorts, s)
+		}
+	}
+
+	displaySorts := append(sortsByPriority, inactiveSorts...)
 
 	headerStyle := lipgloss.NewStyle().
 		Foreground(styles.Subtext0).
 		Bold(true)
 
-	header := fmt.Sprintf("  %-4s  %-3s  %-3s  %-15s  %s",
-		"", "Key", "Pri", "Sort By", "Rev")
+	header := fmt.Sprintf("  %-4s  %-3s  %s",
+		"", "Key", "Sort By")
 	b.WriteString(headerStyle.Render(header))
 	b.WriteString("\n")
 
-	for i, mode := range modes {
+	cursorIndex := -1
+	for i, s := range displaySorts {
+		if s.Mode == m.activeSorts[m.sortCursor].Mode {
+			cursorIndex = i
+			break
+		}
+	}
+
+	for i, sortState := range displaySorts {
 		cursor := "  "
-		if i == m.sortCursor {
+		if i == cursorIndex {
 			cursor = "> "
 		}
 
-		var sortState models.ActiveSort
-		for _, s := range m.activeSorts {
-			if s.Mode == mode {
-				sortState = s
-				break
-			}
-		}
-
 		indicator := "   "
-		if sortState.Enabled {
-			indicator = " ✓ "
+		if sortState.IsEnabled() {
+			indicator = fmt.Sprintf(" %d ", sortState.Priority+1)
 		}
 
-		priority := "   "
-		if sortState.Enabled {
-			priority = fmt.Sprintf(" %d ", sortState.Priority+1)
+		shortKey := sortState.ShortKey()
+		label := sortState.DisplayName()
+		if !sortState.IsEnabled() {
+			label = sortState.Mode.String()
 		}
-
-		reverseIcon := "   "
-		if sortState.Reverse {
-			reverseIcon = " ✓ "
-		}
-
-		shortKey := mode.ShortKey()
-		label := mode.String()
 
 		var rowStyle lipgloss.Style
-		if i == m.sortCursor {
+		if i == cursorIndex {
 			rowStyle = styles.SelectedRowStyle
 		} else {
 			rowStyle = styles.TableRowStyle
@@ -852,17 +914,12 @@ func (m Model) renderSortModal() string {
 
 		formattedIndicator := fmt.Sprintf("%-4s", indicator)
 		formattedKey := fmt.Sprintf("%-3s", shortKey)
-		formattedPriority := fmt.Sprintf("%-3s", priority)
-		formattedLabel := fmt.Sprintf("%-15s", label)
-		formattedReverse := fmt.Sprintf("%s", reverseIcon)
 
-		row := fmt.Sprintf("%s%s  %s  %s  %s  %s",
+		row := fmt.Sprintf("%s%s  %s  %s",
 			cursor,
 			checkStyle.Render(formattedIndicator),
 			keyStyle.Render(formattedKey),
-			rowStyle.Render(formattedPriority),
-			rowStyle.Render(formattedLabel),
-			checkStyle.Render(formattedReverse),
+			rowStyle.Render(label),
 		)
 		b.WriteString(row)
 		b.WriteString("\n")
@@ -870,8 +927,8 @@ func (m Model) renderSortModal() string {
 
 	b.WriteString("\n")
 	helpLines := []string{
-		styles.FooterKeyStyle.Render("enter/key") + styles.FooterDescStyle.Render(" toggle"),
-		styles.FooterKeyStyle.Render("R") + styles.FooterDescStyle.Render(" reverse selected"),
+		styles.FooterKeyStyle.Render("enter/key") + styles.FooterDescStyle.Render(" cycle (off/ASC/DESC)"),
+		styles.FooterKeyStyle.Render("[/]") + styles.FooterDescStyle.Render(" reorder"),
 		styles.FooterKeyStyle.Render("*") + styles.FooterDescStyle.Render(" reset"),
 		styles.FooterKeyStyle.Render("esc") + styles.FooterDescStyle.Render(" close"),
 	}
@@ -933,12 +990,10 @@ func (m Model) renderBatchProgress() string {
 }
 
 func (m Model) renderBranchDetail() string {
-	var b strings.Builder
+	summary, _ := m.summaries[m.selectedRepo]
+	isJJ := summary.VCSType == models.VCSTypeJJ
 
-	summary, ok := m.summaries[m.selectedRepo]
-	if !ok {
-		return "Repository not found"
-	}
+	var b strings.Builder
 
 	b.WriteString(m.renderBreadcrumbs())
 	b.WriteString("\n\n")
@@ -954,28 +1009,29 @@ func (m Model) renderBranchDetail() string {
 
 	labelStyle := lipgloss.NewStyle().
 		Foreground(styles.Subtext0).
-		Width(16)
+		Width(18)
 
+	// Branch Information Section
 	b.WriteString(sectionStyle.Render("Branch Information"))
 	b.WriteString("\n\n")
 
-	if m.selectedBranch.Upstream != "" {
+	if m.branchDetail.Branch.Upstream != "" {
 		b.WriteString(infoStyle.Render(
-			labelStyle.Render("Upstream:") + " " + m.selectedBranch.Upstream,
+			labelStyle.Render("Upstream:") + " " + m.branchDetail.Branch.Upstream,
 		))
 		b.WriteString("\n")
 	}
 
-	if m.selectedBranch.Ahead > 0 || m.selectedBranch.Behind > 0 {
+	if m.branchDetail.Branch.Ahead > 0 || m.branchDetail.Branch.Behind > 0 {
 		status := ""
-		if m.selectedBranch.Ahead > 0 {
-			status += styles.AheadStyle.Render(fmt.Sprintf("↑%d ahead", m.selectedBranch.Ahead))
+		if m.branchDetail.Branch.Ahead > 0 {
+			status += styles.AheadStyle.Render(fmt.Sprintf("↑%d ahead", m.branchDetail.Branch.Ahead))
 		}
-		if m.selectedBranch.Behind > 0 {
+		if m.branchDetail.Branch.Behind > 0 {
 			if status != "" {
 				status += " "
 			}
-			status += styles.BehindStyle.Render(fmt.Sprintf("↓%d behind", m.selectedBranch.Behind))
+			status += styles.BehindStyle.Render(fmt.Sprintf("↓%d behind", m.branchDetail.Branch.Behind))
 		}
 		b.WriteString(infoStyle.Render(
 			labelStyle.Render("Tracking:") + " " + status,
@@ -984,7 +1040,7 @@ func (m Model) renderBranchDetail() string {
 	}
 
 	defaultBranch := m.findDefaultBranch()
-	if defaultBranch != "" && m.selectedBranch.Name != defaultBranch {
+	if defaultBranch != "" && m.branchDetail.Branch.Name != defaultBranch {
 		ahead, behind := m.compareToDefaultBranch(defaultBranch)
 		if ahead >= 0 && behind >= 0 {
 			status := ""
@@ -1007,8 +1063,8 @@ func (m Model) renderBranchDetail() string {
 		}
 	}
 
-	if len(m.branchCommits) > 0 {
-		lastCommit := m.branchCommits[0]
+	if len(m.branchDetail.Commits) > 0 {
+		lastCommit := m.branchDetail.Commits[0]
 		b.WriteString(infoStyle.Render(
 			labelStyle.Render("Last commit:") + " " + lastCommit.RelativeDate(),
 		))
@@ -1019,18 +1075,122 @@ func (m Model) renderBranchDetail() string {
 		b.WriteString("\n")
 	}
 
-	if summary.PRInfo != nil && m.selectedBranch.IsCurrent {
-		b.WriteString(infoStyle.Render(
-			labelStyle.Render("Pull Request:") + " " + styles.PROpenStyle.Render(fmt.Sprintf("#%d", summary.PRInfo.Number)) + " " + summary.PRInfo.Title,
-		))
-		b.WriteString("\n")
+	// File Changes
+	fileChanges := m.branchDetail.FileChangesSummary()
+	fileStyle := infoStyle
+	if m.branchDetail.UncommittedCount() > 0 {
+		fileStyle = lipgloss.NewStyle().
+			Foreground(styles.Peach).
+			PaddingLeft(2)
+	}
+	b.WriteString(fileStyle.Render(
+		labelStyle.Render("File changes:") + " " + fileChanges,
+	))
+	b.WriteString("\n")
+
+	// JJ-specific information
+	if isJJ {
+		if m.branchDetail.ChangeID != "" {
+			b.WriteString(infoStyle.Render(
+				labelStyle.Render("Change ID:") + " " + styles.SubtitleStyle.Render(m.branchDetail.ChangeID),
+			))
+			b.WriteString("\n")
+		}
+		if m.branchDetail.Description != "" {
+			b.WriteString(infoStyle.Render(
+				labelStyle.Render("Description:") + " " + truncate(m.branchDetail.Description, 60),
+			))
+			b.WriteString("\n")
+		}
 	}
 
+	// PR & CI Section
+	if m.branchDetail.PRInfo != nil || m.branchDetail.WorkflowInfo != nil {
+		b.WriteString("\n")
+		b.WriteString(sectionStyle.Render("Pull Request & CI/CD"))
+		b.WriteString("\n\n")
+
+		if m.branchDetail.PRInfo != nil {
+			pr := m.branchDetail.PRInfo
+			prStatus := pr.StatusDisplay()
+			prStyle := styles.PROpenStyle
+			if prStatus == "MERGED" {
+				prStyle = styles.CleanStyle
+			} else if prStatus == "CLOSED" {
+				prStyle = styles.SubtitleStyle
+			}
+
+			b.WriteString(infoStyle.Render(
+				labelStyle.Render("PR:") + " " + prStyle.Render(fmt.Sprintf("#%d %s", pr.Number, prStatus)),
+			))
+			b.WriteString("\n")
+			b.WriteString(infoStyle.Render(
+				labelStyle.Render("Title:") + " " + truncate(pr.Title, 60),
+			))
+			b.WriteString("\n")
+
+			// Review Status
+			reviewStatus := pr.ReviewStatus()
+			reviewStyle := styles.SubtitleStyle
+			if reviewStatus == "approved" {
+				reviewStyle = styles.CleanStyle
+			} else if reviewStatus == "changes requested" {
+				reviewStyle = styles.ErrorStyle
+			}
+			b.WriteString(infoStyle.Render(
+				labelStyle.Render("Review:") + " " + reviewStyle.Render(reviewStatus),
+			))
+			b.WriteString("\n")
+
+			if len(pr.ApprovedBy) > 0 {
+				approvers := strings.Join(pr.ApprovedBy, ", ")
+				b.WriteString(infoStyle.Render(
+					labelStyle.Render("Approved by:") + " " + truncate(approvers, 60),
+				))
+				b.WriteString("\n")
+			}
+
+			// CI Checks
+			if pr.Checks.Total > 0 {
+				checkStatus := pr.Checks.Summary()
+				checkStyle := styles.SubtitleStyle
+				if checkStatus == "passing" {
+					checkStyle = styles.CleanStyle
+				} else if checkStatus == "failing" {
+					checkStyle = styles.ErrorStyle
+				}
+				checkDetail := fmt.Sprintf("%s (%d/%d passing)", checkStatus, pr.Checks.Passing, pr.Checks.Total)
+				b.WriteString(infoStyle.Render(
+					labelStyle.Render("Checks:") + " " + checkStyle.Render(checkDetail),
+				))
+				b.WriteString("\n")
+			}
+		}
+
+		// Workflow Status
+		if m.branchDetail.WorkflowInfo != nil {
+			wf := m.branchDetail.WorkflowInfo
+			wfStatus := wf.StatusDisplay()
+			wfStyle := styles.SubtitleStyle
+			if wfStatus == "passing" {
+				wfStyle = styles.CleanStyle
+			} else if wfStatus == "failing" {
+				wfStyle = styles.ErrorStyle
+			}
+			wfDetail := fmt.Sprintf("%s (%d/%d passing)", wfStatus, wf.Passing, wf.Total)
+			b.WriteString(infoStyle.Render(
+				labelStyle.Render("Workflows:") + " " + wfStyle.Render(wfDetail),
+			))
+			b.WriteString("\n")
+		}
+	}
+
+	// Recent Commits Section
 	b.WriteString("\n")
 	b.WriteString(sectionStyle.Render("Recent Commits"))
 	b.WriteString("\n\n")
 
-	if len(m.branchCommits) == 0 {
+	if len(m.branchDetail.Commits) == 0 {
 		emptyStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(styles.Surface1).
@@ -1039,11 +1199,11 @@ func (m Model) renderBranchDetail() string {
 		b.WriteString(emptyStyle.Render("No commits found"))
 	} else {
 		maxCommits := 10
-		if len(m.branchCommits) < maxCommits {
-			maxCommits = len(m.branchCommits)
+		if len(m.branchDetail.Commits) < maxCommits {
+			maxCommits = len(m.branchDetail.Commits)
 		}
 		for i := 0; i < maxCommits; i++ {
-			commit := m.branchCommits[i]
+			commit := m.branchDetail.Commits[i]
 			hash := styles.SubtitleStyle.Render(commit.ShortHash)
 			subject := truncate(commit.Subject, 50)
 			author := truncate(commit.Author, 15)
@@ -1059,6 +1219,31 @@ func (m Model) renderBranchDetail() string {
 		}
 	}
 
+	// Actions Section
+	b.WriteString("\n")
+	b.WriteString(sectionStyle.Render("Actions"))
+	b.WriteString("\n\n")
+
+	actionStyle := lipgloss.NewStyle().
+		Foreground(styles.Blue).
+		PaddingLeft(2)
+
+	actions := []string{
+		styles.FooterKeyStyle.Render("y") + actionStyle.Render(" copy branch name"),
+	}
+
+	if m.branchDetail.PRInfo != nil {
+		actions = append(actions,
+			styles.FooterKeyStyle.Render("p") + actionStyle.Render(" open PR in browser"),
+			styles.FooterKeyStyle.Render("o") + actionStyle.Render(" open PR URL"))
+	} else {
+		actions = append(actions,
+			styles.FooterKeyStyle.Render("p") + actionStyle.Render(" create new PR"))
+	}
+
+	b.WriteString(strings.Join(actions, "  "))
+	b.WriteString("\n")
+
 	contentLines := strings.Count(b.String(), "\n")
 	footerHeight := 1
 	paddingNeeded := m.height - contentLines - footerHeight - 1
@@ -1067,7 +1252,7 @@ func (m Model) renderBranchDetail() string {
 	} else {
 		b.WriteString("\n")
 	}
-	b.WriteString(styles.FooterStyle.Render("esc: back"))
+	b.WriteString(styles.FooterStyle.Render("esc: back  ?: help"))
 
 	return b.String()
 }
@@ -1082,7 +1267,7 @@ func (m Model) findDefaultBranch() string {
 }
 
 func (m Model) compareToDefaultBranch(defaultBranch string) (int, int) {
-	if defaultBranch == "" || m.selectedBranch.Name == defaultBranch {
+	if defaultBranch == "" || m.branchDetail.Branch.Name == defaultBranch {
 		return -1, -1
 	}
 
@@ -1091,9 +1276,9 @@ func (m Model) compareToDefaultBranch(defaultBranch string) (int, int) {
 			ahead := 0
 			behind := 0
 
-			for _, commit := range m.branchCommits {
+			for _, commit := range m.branchDetail.Commits {
 				found := false
-				for _, defCommit := range m.branchCommits {
+				for _, defCommit := range m.branchDetail.Commits {
 					if commit.Hash == defCommit.Hash {
 						found = true
 						break

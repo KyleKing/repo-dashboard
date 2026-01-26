@@ -21,9 +21,13 @@ type KeyMap struct {
 	Search  key.Binding
 	Reverse key.Binding
 
-	FetchAll       key.Binding
-	PruneRemote    key.Binding
-	CleanupMerged  key.Binding
+	FetchAll      key.Binding
+	PruneRemote   key.Binding
+	CleanupMerged key.Binding
+
+	OpenPR     key.Binding
+	CopyBranch key.Binding
+	OpenURL    key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -103,6 +107,18 @@ func DefaultKeyMap() KeyMap {
 		CleanupMerged: key.NewBinding(
 			key.WithKeys("C"),
 			key.WithHelp("C", "cleanup"),
+		),
+		OpenPR: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "open/create PR"),
+		),
+		CopyBranch: key.NewBinding(
+			key.WithKeys("y"),
+			key.WithHelp("y", "copy branch name"),
+		),
+		OpenURL: key.NewBinding(
+			key.WithKeys("o"),
+			key.WithHelp("o", "open URL"),
 		),
 	}
 }

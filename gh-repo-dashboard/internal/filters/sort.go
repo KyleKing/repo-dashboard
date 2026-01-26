@@ -87,7 +87,7 @@ func SortPathsMulti(paths []string, summaries map[string]models.RepoSummary, act
 
 	enabledSorts := []models.ActiveSort{}
 	for _, s := range activeSorts {
-		if s.Enabled {
+		if s.IsEnabled() {
 			enabledSorts = append(enabledSorts, s)
 		}
 	}
@@ -109,12 +109,12 @@ func SortPathsMulti(paths []string, summaries map[string]models.RepoSummary, act
 
 		for _, activeSort := range enabledSorts {
 			less := comparePaths(si, sj, activeSort.Mode)
-			if activeSort.Reverse {
+			if activeSort.Direction == models.SortDirectionDesc {
 				less = !less
 			}
 
 			greater := comparePaths(sj, si, activeSort.Mode)
-			if activeSort.Reverse {
+			if activeSort.Direction == models.SortDirectionDesc {
 				greater = !greater
 			}
 

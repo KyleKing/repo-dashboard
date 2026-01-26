@@ -43,9 +43,17 @@ type DetailLoadedMsg struct {
 }
 
 type BranchDetailLoadedMsg struct {
-	Path     string
-	Branch   models.BranchInfo
-	Commits  []models.CommitInfo
+	Path   string
+	Detail models.BranchDetail
+}
+
+type PRCreatedMsg struct {
+	URL   string
+	Error error
+}
+
+type CopySuccessMsg struct {
+	Text string
 }
 
 type BatchResult struct {

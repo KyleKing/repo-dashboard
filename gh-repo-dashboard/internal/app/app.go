@@ -58,7 +58,7 @@ type Model struct {
 	worktrees      []models.WorktreeInfo
 
 	selectedBranch models.BranchInfo
-	branchCommits  []models.CommitInfo
+	branchDetail   models.BranchDetail
 
 	filterCursor int
 	sortCursor   int
@@ -87,7 +87,7 @@ func New(scanPaths []string, maxDepth int) Model {
 	for i, mode := range models.AllSortModes() {
 		sort := models.NewActiveSort(mode, i)
 		if mode == models.SortModeName {
-			sort.Enabled = true
+			sort.Direction = models.SortDirectionAsc
 		}
 		sorts = append(sorts, sort)
 	}
@@ -135,21 +135,6 @@ func (m *Model) SetFilter(mode models.FilterMode) {
 	}
 }
 
-func (m *Model) ToggleFilter(mode models.FilterMode) {
-	if mode == models.FilterModeAll {
-		return
-	}
-
-	for i := range m.activeFilters {
-		if m.activeFilters[i].Mode == mode {
-			m.activeFilters[i].Enabled = !m.activeFilters[i].Enabled
-			if !m.activeFilters[i].Enabled {
-				m.activeFilters[i].Inverted = false
-			}
-		}
-	}
-}
-
 func (m *Model) CycleFilterState(mode models.FilterMode) {
 	if mode == models.FilterModeAll {
 		return
@@ -183,22 +168,74 @@ func (m *Model) CycleFilter() {
 	m.SetFilter(models.FilterModeAll)
 }
 
-func (m *Model) ToggleSort(mode models.SortMode) {
+func (m *Model) CycleSortState(mode models.SortMode) {
 	for i := range m.activeSorts {
 		if m.activeSorts[i].Mode == mode {
-			if m.activeSorts[i].Enabled {
-				m.activeSorts[i].Enabled = false
-				m.activeSorts[i].Priority = len(m.activeSorts)
-			} else {
-				m.activeSorts[i].Enabled = true
+			switch m.activeSorts[i].Direction {
+			case models.SortDirectionOff:
+				m.activeSorts[i].Direction = models.SortDirectionAsc
 				highestPriority := -1
 				for _, s := range m.activeSorts {
-					if s.Enabled && s.Priority > highestPriority {
+					if s.IsEnabled() && s.Priority > highestPriority {
 						highestPriority = s.Priority
 					}
 				}
 				m.activeSorts[i].Priority = highestPriority + 1
+			case models.SortDirectionAsc:
+				m.activeSorts[i].Direction = models.SortDirectionDesc
+			case models.SortDirectionDesc:
+				m.activeSorts[i].Direction = models.SortDirectionOff
+				m.activeSorts[i].Priority = len(m.activeSorts)
 			}
+		}
+	}
+}
+
+func (m *Model) MoveSortUp() {
+	if m.sortCursor < 0 || m.sortCursor >= len(m.activeSorts) {
+		return
+	}
+
+	currentSort := &m.activeSorts[m.sortCursor]
+	if !currentSort.IsEnabled() || currentSort.Priority == 0 {
+		return
+	}
+
+	for i := range m.activeSorts {
+		if m.activeSorts[i].IsEnabled() && m.activeSorts[i].Priority == currentSort.Priority-1 {
+			m.activeSorts[i].Priority++
+			currentSort.Priority--
+			return
+		}
+	}
+}
+
+func (m *Model) MoveSortDown() {
+	if m.sortCursor < 0 || m.sortCursor >= len(m.activeSorts) {
+		return
+	}
+
+	currentSort := &m.activeSorts[m.sortCursor]
+	if !currentSort.IsEnabled() {
+		return
+	}
+
+	maxPriority := -1
+	for _, s := range m.activeSorts {
+		if s.IsEnabled() && s.Priority > maxPriority {
+			maxPriority = s.Priority
+		}
+	}
+
+	if currentSort.Priority >= maxPriority {
+		return
+	}
+
+	for i := range m.activeSorts {
+		if m.activeSorts[i].IsEnabled() && m.activeSorts[i].Priority == currentSort.Priority+1 {
+			m.activeSorts[i].Priority--
+			currentSort.Priority++
+			return
 		}
 	}
 }
@@ -212,17 +249,12 @@ func (m *Model) ResetFilters() {
 
 func (m *Model) ResetSorts() {
 	for i := range m.activeSorts {
-		m.activeSorts[i].Enabled = m.activeSorts[i].Mode == models.SortModeName
-		m.activeSorts[i].Priority = i
-		m.activeSorts[i].Reverse = false
-	}
-}
-
-func (m *Model) ToggleSortReverse(mode models.SortMode) {
-	for i := range m.activeSorts {
-		if m.activeSorts[i].Mode == mode {
-			m.activeSorts[i].Reverse = !m.activeSorts[i].Reverse
+		if m.activeSorts[i].Mode == models.SortModeName {
+			m.activeSorts[i].Direction = models.SortDirectionAsc
+		} else {
+			m.activeSorts[i].Direction = models.SortDirectionOff
 		}
+		m.activeSorts[i].Priority = i
 	}
 }
 

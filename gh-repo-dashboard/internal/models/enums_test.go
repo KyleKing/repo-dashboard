@@ -23,12 +23,12 @@ func TestFilterModeString(t *testing.T) {
 		mode     FilterMode
 		expected string
 	}{
-		{FilterModeAll, "ALL"},
-		{FilterModeAhead, "AHEAD"},
-		{FilterModeBehind, "BEHIND"},
-		{FilterModeDirty, "DIRTY"},
-		{FilterModeHasPR, "HAS_PR"},
-		{FilterModeHasStash, "HAS_STASH"},
+		{FilterModeAll, "All"},
+		{FilterModeAhead, "Ahead"},
+		{FilterModeBehind, "Behind"},
+		{FilterModeDirty, "Dirty"},
+		{FilterModeHasPR, "Has PR"},
+		{FilterModeHasStash, "Has Stash"},
 	}
 
 	for _, tt := range tests {
@@ -70,10 +70,10 @@ func TestSortModeString(t *testing.T) {
 		mode     SortMode
 		expected string
 	}{
-		{SortModeName, "NAME"},
-		{SortModeModified, "MODIFIED"},
-		{SortModeStatus, "STATUS"},
-		{SortModeBranch, "BRANCH"},
+		{SortModeName, "Name"},
+		{SortModeModified, "Modified"},
+		{SortModeStatus, "Status"},
+		{SortModeBranch, "Branch"},
 	}
 
 	for _, tt := range tests {

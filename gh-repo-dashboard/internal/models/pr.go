@@ -3,15 +3,18 @@ package models
 import "time"
 
 type PRInfo struct {
-	Number    int
-	Title     string
-	State     string
-	URL       string
-	IsDraft   bool
-	Mergeable string
-	HeadRef   string
-	BaseRef   string
-	Checks    ChecksStatus
+	Number          int
+	Title           string
+	State           string
+	URL             string
+	IsDraft         bool
+	Mergeable       string
+	HeadRef         string
+	BaseRef         string
+	Checks          ChecksStatus
+	ReviewDecision  string
+	ApprovedBy      []string
+	ChangesRequests int
 }
 
 func (p PRInfo) StatusDisplay() string {
@@ -27,6 +30,22 @@ func (p PRInfo) StatusDisplay() string {
 		return "CLOSED"
 	default:
 		return p.State
+	}
+}
+
+func (p PRInfo) ReviewStatus() string {
+	switch p.ReviewDecision {
+	case "APPROVED":
+		return "approved"
+	case "CHANGES_REQUESTED":
+		return "changes requested"
+	case "REVIEW_REQUIRED":
+		return "review required"
+	default:
+		if len(p.ApprovedBy) > 0 {
+			return "approved"
+		}
+		return "—"
 	}
 }
 

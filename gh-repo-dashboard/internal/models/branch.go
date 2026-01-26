@@ -22,6 +22,50 @@ func (b BranchInfo) RelativeLastCommit() string {
 	return RelativeTime(b.LastCommit)
 }
 
+type BranchDetail struct {
+	Branch       BranchInfo
+	Commits      []CommitInfo
+	Staged       int
+	Unstaged     int
+	Untracked    int
+	Conflicted   int
+	PRInfo       *PRInfo
+	WorkflowInfo *WorkflowSummary
+	ChangeID     string
+	Description  string
+}
+
+func (b BranchDetail) UncommittedCount() int {
+	return b.Staged + b.Unstaged + b.Untracked + b.Conflicted
+}
+
+func (b BranchDetail) FileChangesSummary() string {
+	parts := []string{}
+	if b.Staged > 0 {
+		parts = append(parts, fmt.Sprintf("%d staged", b.Staged))
+	}
+	if b.Unstaged > 0 {
+		parts = append(parts, fmt.Sprintf("%d unstaged", b.Unstaged))
+	}
+	if b.Untracked > 0 {
+		parts = append(parts, fmt.Sprintf("%d untracked", b.Untracked))
+	}
+	if b.Conflicted > 0 {
+		parts = append(parts, fmt.Sprintf("%d conflicted", b.Conflicted))
+	}
+	if len(parts) == 0 {
+		return "No uncommitted changes"
+	}
+	result := ""
+	for i, p := range parts {
+		if i > 0 {
+			result += ", "
+		}
+		result += p
+	}
+	return result
+}
+
 type CommitInfo struct {
 	Hash      string
 	ShortHash string

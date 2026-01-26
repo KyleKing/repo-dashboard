@@ -131,6 +131,19 @@ var (
 
 	HelpDescStyle = lipgloss.NewStyle().
 			Foreground(Subtext0)
+
+	TabActiveStyle = lipgloss.NewStyle().
+			Foreground(Blue).
+			Bold(true).
+			Underline(true).
+			Padding(0, 2)
+
+	TabInactiveStyle = lipgloss.NewStyle().
+				Foreground(Subtext0).
+				Padding(0, 2)
+
+	TabSeparatorStyle = lipgloss.NewStyle().
+				Foreground(Surface1)
 )
 
 func Badge(text string, style lipgloss.Style) string {

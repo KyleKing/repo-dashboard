@@ -31,6 +31,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleSortKey(msg)
 		case ViewModeRepoDetail:
 			return m.handleDetailKey(msg)
+		case ViewModeBranchDetail:
+			return m.handleBranchDetailKey(msg)
 		case ViewModeBatchProgress:
 			return m.handleBatchKey(msg)
 		default:
@@ -101,8 +103,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case BranchDetailLoadedMsg:
 		if msg.Path == m.selectedRepo {
-			m.branchCommits = msg.Commits
+			m.branchDetail = msg.Detail
 		}
+		return m, nil
+
+	case PRCreatedMsg:
+		if msg.Error != nil {
+			return m, nil
+		}
+		return m, nil
+
+	case CopySuccessMsg:
 		return m, nil
 
 	case batch.TaskProgressMsg:
@@ -289,6 +300,35 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleBranchDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Quit):
+		return m, tea.Quit
+
+	case key.Matches(msg, m.keys.Back):
+		m.viewMode = ViewModeRepoDetail
+		return m, nil
+
+	case key.Matches(msg, m.keys.OpenPR):
+		return m, openOrCreatePRCmd(m.selectedRepo, m.branchDetail.Branch.Name)
+
+	case key.Matches(msg, m.keys.CopyBranch):
+		return m, copyToClipboardCmd(m.branchDetail.Branch.Name)
+
+	case key.Matches(msg, m.keys.OpenURL):
+		if m.branchDetail.PRInfo != nil && m.branchDetail.PRInfo.URL != "" {
+			return m, openURLCmd(m.branchDetail.PRInfo.URL)
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.Help):
+		m.viewMode = ViewModeHelp
+		return m, nil
+	}
+
+	return m, nil
+}
+
 func (m Model) detailListLen() int {
 	switch m.detailTab {
 	case DetailTabBranches:
@@ -326,13 +366,6 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Enter):
 		selectedMode := modes[m.filterCursor]
-		m.ToggleFilter(selectedMode)
-		m.updateFilteredPaths()
-		m.cursor = 0
-		return m, nil
-
-	case msg.String() == "!":
-		selectedMode := modes[m.filterCursor]
 		m.CycleFilterState(selectedMode)
 		m.updateFilteredPaths()
 		m.cursor = 0
@@ -347,7 +380,7 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		for _, mode := range modes {
 			if msg.String() == mode.ShortKey() {
-				m.ToggleFilter(mode)
+				m.CycleFilterState(mode)
 				m.updateFilteredPaths()
 				m.cursor = 0
 				return m, nil
@@ -383,13 +416,17 @@ func (m Model) handleSortKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Enter):
 		selectedMode := modes[m.sortCursor]
-		m.ToggleSort(selectedMode)
+		m.CycleSortState(selectedMode)
 		m.updateFilteredPaths()
 		return m, nil
 
-	case key.Matches(msg, m.keys.Reverse):
-		selectedMode := modes[m.sortCursor]
-		m.ToggleSortReverse(selectedMode)
+	case msg.String() == "[":
+		m.MoveSortUp()
+		m.updateFilteredPaths()
+		return m, nil
+
+	case msg.String() == "]":
+		m.MoveSortDown()
 		m.updateFilteredPaths()
 		return m, nil
 
@@ -401,7 +438,7 @@ func (m Model) handleSortKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		for _, mode := range modes {
 			if msg.String() == mode.ShortKey() {
-				m.ToggleSort(mode)
+				m.CycleSortState(mode)
 				m.updateFilteredPaths()
 				return m, nil
 			}
@@ -551,10 +588,48 @@ func loadBranchDetailCmd(repoPath string, branchName string) tea.Cmd {
 
 		commits, _ := ops.GetCommitLog(ctx, repoPath, 20)
 
-		return BranchDetailLoadedMsg{
-			Path:    repoPath,
-			Branch:  selectedBranch,
-			Commits: commits,
+		summary, _ := ops.GetRepoSummary(ctx, repoPath)
+
+		detail := models.BranchDetail{
+			Branch:       selectedBranch,
+			Commits:      commits,
+			Staged:       summary.Staged,
+			Unstaged:     summary.Unstaged,
+			Untracked:    summary.Untracked,
+			Conflicted:   summary.Conflicted,
+			PRInfo:       summary.PRInfo,
+			WorkflowInfo: summary.WorkflowInfo,
 		}
+
+		if vcsType := vcs.DetectVCSType(repoPath); vcsType == models.VCSTypeJJ {
+		}
+
+		return BranchDetailLoadedMsg{
+			Path:   repoPath,
+			Detail: detail,
+		}
+	}
+}
+
+func openOrCreatePRCmd(repoPath string, branchName string) tea.Cmd {
+	return func() tea.Msg {
+		return PRCreatedMsg{
+			URL:   "",
+			Error: nil,
+		}
+	}
+}
+
+func copyToClipboardCmd(text string) tea.Cmd {
+	return func() tea.Msg {
+		return CopySuccessMsg{
+			Text: text,
+		}
+	}
+}
+
+func openURLCmd(url string) tea.Cmd {
+	return func() tea.Msg {
+		return nil
 	}
 }
