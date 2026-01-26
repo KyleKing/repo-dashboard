@@ -20,6 +20,8 @@ func (m Model) View() string {
 		return m.renderHelp()
 	case ViewModeRepoDetail:
 		return m.renderRepoDetail()
+	case ViewModeBranchDetail:
+		return m.renderBranchDetail()
 	case ViewModeFilter:
 		return m.renderFilterModal()
 	case ViewModeSort:
@@ -35,62 +37,140 @@ func (m Model) renderRepoList() string {
 	var b strings.Builder
 
 	b.WriteString(m.renderBreadcrumbs())
-	b.WriteString("\n")
+	b.WriteString("\n\n")
 	b.WriteString(m.renderStatusBar())
-	b.WriteString("\n")
+	b.WriteString("\n\n")
 
 	if m.searching {
 		b.WriteString(m.searchInput.View())
-		b.WriteString("\n")
+		b.WriteString("\n\n")
 	}
 
 	b.WriteString(m.renderTable())
-	b.WriteString("\n")
-	b.WriteString(m.renderFooter())
+
+	footer := m.renderFooter()
+	footerHeight := 1
+	tableLines := strings.Count(b.String(), "\n")
+	paddingNeeded := m.height - tableLines - footerHeight - 1
+	if paddingNeeded > 0 {
+		b.WriteString(strings.Repeat("\n", paddingNeeded))
+	} else {
+		b.WriteString("\n")
+	}
+	b.WriteString(footer)
 
 	return b.String()
 }
 
 func (m Model) renderBreadcrumbs() string {
-	title := styles.TitleStyle.Render("repo-dashboard")
+	switch m.viewMode {
+	case ViewModeRepoDetail:
+		summary, ok := m.summaries[m.selectedRepo]
+		if !ok {
+			return styles.TitleStyle.Render("repo-dashboard")
+		}
 
-	badges := []string{}
+		home := styles.SubtitleStyle.Render("Repos")
+		sep := styles.SubtitleStyle.Render(" > ")
+		repo := styles.TitleStyle.Render(summary.Name())
 
-	repoCount := fmt.Sprintf("%d repos", len(m.filteredPaths))
-	if len(m.filteredPaths) != len(m.repoPaths) {
-		repoCount = fmt.Sprintf("%d/%d repos", len(m.filteredPaths), len(m.repoPaths))
+		var badges []string
+		badges = append(badges, styles.Badge(summary.VCSType.String(), styles.CountBadgeStyle))
+		if summary.IsDirty() {
+			badges = append(badges, styles.Badge("dirty", styles.FilterBadgeStyle))
+		}
+		if summary.PRInfo != nil {
+			badges = append(badges, styles.Badge(fmt.Sprintf("PR #%d", summary.PRInfo.Number), styles.PROpenStyle))
+		}
+
+		return home + sep + repo + "  " + strings.Join(badges, " ")
+
+	case ViewModeBranchDetail:
+		summary, ok := m.summaries[m.selectedRepo]
+		if !ok {
+			return styles.TitleStyle.Render("repo-dashboard")
+		}
+
+		home := styles.SubtitleStyle.Render("Repos")
+		sep := styles.SubtitleStyle.Render(" > ")
+		repo := styles.BranchStyle.Render(summary.Name())
+		branch := styles.TitleStyle.Render(m.selectedBranch.Name)
+
+		var badges []string
+		if m.selectedBranch.IsCurrent {
+			badges = append(badges, styles.Badge("current", styles.PROpenStyle))
+		}
+		if m.selectedBranch.Ahead > 0 {
+			badges = append(badges, styles.Badge(fmt.Sprintf("↑%d", m.selectedBranch.Ahead), styles.AheadStyle))
+		}
+		if m.selectedBranch.Behind > 0 {
+			badges = append(badges, styles.Badge(fmt.Sprintf("↓%d", m.selectedBranch.Behind), styles.BehindStyle))
+		}
+
+		return home + sep + repo + sep + branch + "  " + strings.Join(badges, " ")
+
+	default:
+		title := styles.TitleStyle.Render("repo-dashboard")
+
+		badges := []string{}
+
+		repoCount := fmt.Sprintf("%d repos", len(m.filteredPaths))
+		if len(m.filteredPaths) != len(m.repoPaths) {
+			repoCount = fmt.Sprintf("%d/%d repos", len(m.filteredPaths), len(m.repoPaths))
+		}
+		badges = append(badges, styles.Badge(repoCount, styles.CountBadgeStyle))
+
+		if dirtyCount := m.DirtyCount(); dirtyCount > 0 {
+			badges = append(badges, styles.Badge(fmt.Sprintf("%d dirty", dirtyCount), styles.FilterBadgeStyle))
+		}
+
+		if prCount := m.PRCount(); prCount > 0 {
+			badges = append(badges, styles.Badge(fmt.Sprintf("%d PRs", prCount), styles.PROpenStyle))
+		}
+
+		if m.loading {
+			progress := fmt.Sprintf("Loading %d/%d", m.loadedCount, m.loadingCount)
+			badges = append(badges, styles.Badge(progress, styles.CountBadgeStyle))
+		}
+
+		return title + "  " + strings.Join(badges, " ")
 	}
-	badges = append(badges, styles.Badge(repoCount, styles.CountBadgeStyle))
-
-	if dirtyCount := m.DirtyCount(); dirtyCount > 0 {
-		badges = append(badges, styles.Badge(fmt.Sprintf("%d dirty", dirtyCount), styles.FilterBadgeStyle))
-	}
-
-	if prCount := m.PRCount(); prCount > 0 {
-		badges = append(badges, styles.Badge(fmt.Sprintf("%d PRs", prCount), styles.PROpenStyle))
-	}
-
-	if m.loading {
-		progress := fmt.Sprintf("Loading %d/%d", m.loadedCount, m.loadingCount)
-		badges = append(badges, styles.Badge(progress, styles.CountBadgeStyle))
-	}
-
-	return title + "  " + strings.Join(badges, " ")
 }
 
 func (m Model) renderStatusBar() string {
 	parts := []string{}
 
-	filter := m.CurrentFilter()
-	if filter != models.FilterModeAll {
-		parts = append(parts, styles.Badge(filter.String(), styles.FilterBadgeStyle))
+	for _, f := range m.activeFilters {
+		if f.Enabled && f.Mode != models.FilterModeAll {
+			label := f.Mode.String()
+			if f.Inverted {
+				label = "NOT " + label
+			}
+			parts = append(parts, styles.Badge(label, styles.FilterBadgeStyle))
+		}
 	}
 
-	sortLabel := m.sortMode.String()
-	if m.sortReverse {
-		sortLabel += " (rev)"
+	enabledSorts := []models.ActiveSort{}
+	for _, s := range m.activeSorts {
+		if s.Enabled {
+			enabledSorts = append(enabledSorts, s)
+		}
 	}
-	parts = append(parts, styles.Badge(sortLabel, styles.SortBadgeStyle))
+
+	if len(enabledSorts) > 0 {
+		for i := 0; i < len(enabledSorts); i++ {
+			for _, s := range m.activeSorts {
+				if s.Enabled && s.Priority == i {
+					label := s.Mode.String()
+					if s.Reverse {
+						label += " (rev)"
+					}
+					parts = append(parts, styles.Badge(label, styles.SortBadgeStyle))
+					break
+				}
+			}
+		}
+	}
 
 	if m.searchText != "" {
 		parts = append(parts, styles.Badge("\""+m.searchText+"\"", styles.SearchBadgeStyle))
@@ -101,10 +181,16 @@ func (m Model) renderStatusBar() string {
 
 func (m Model) renderTable() string {
 	if len(m.filteredPaths) == 0 {
+		emptyStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(styles.Surface1).
+			Padding(2, 4).
+			Foreground(styles.Subtext0)
+
 		if m.loading {
-			return styles.SubtitleStyle.Render("  Discovering repositories...")
+			return emptyStyle.Render("Discovering repositories...")
 		}
-		return styles.SubtitleStyle.Render("  No repositories found")
+		return emptyStyle.Render("No repositories found")
 	}
 
 	colWidths := struct {
@@ -135,14 +221,17 @@ func (m Model) renderTable() string {
 		availableHeight--
 	}
 
-	startIdx := 0
-	if m.cursor >= availableHeight {
-		startIdx = m.cursor - availableHeight + 1
+	startIdx := m.cursor - availableHeight/2
+	if startIdx < 0 {
+		startIdx = 0
 	}
 
 	endIdx := startIdx + availableHeight
 	if endIdx > len(m.filteredPaths) {
 		endIdx = len(m.filteredPaths)
+		if endIdx-availableHeight >= 0 {
+			startIdx = endIdx - availableHeight
+		}
 	}
 
 	var rows []string
@@ -213,12 +302,17 @@ func (m Model) renderTableRow(s models.RepoSummary, selected bool, colWidths str
 		}
 	}
 
-	row := fmt.Sprintf("%s%-*s  %s  %s  %-*s  %s",
+	formattedName := fmt.Sprintf("%-*s", colWidths.name, name)
+	formattedBranch := fmt.Sprintf("%-*s", colWidths.branch, branch)
+	formattedStatus := fmt.Sprintf("%-*s", colWidths.status, status)
+	formattedPR := fmt.Sprintf("%-*s", colWidths.pr, pr)
+
+	row := fmt.Sprintf("%s%s  %s  %s  %s  %s",
 		cursor,
-		colWidths.name, nameStyle.Render(name),
-		branchStyle.Render(fmt.Sprintf("%-*s", colWidths.branch, branch)),
-		statusStyle.Render(fmt.Sprintf("%-*s", colWidths.status, status)),
-		colWidths.pr, prStyle.Render(pr),
+		nameStyle.Render(formattedName),
+		branchStyle.Render(formattedBranch),
+		statusStyle.Render(formattedStatus),
+		prStyle.Render(formattedPR),
 		style.Render(modified),
 	)
 
@@ -256,6 +350,11 @@ func (m Model) renderHelp() string {
 	b.WriteString(styles.TitleStyle.Render("Help"))
 	b.WriteString("\n\n")
 
+	sectionStyle := lipgloss.NewStyle().
+		Foreground(styles.Blue).
+		Bold(true).
+		PaddingLeft(1)
+
 	sections := []struct {
 		title string
 		keys  []struct{ key, desc string }
@@ -274,9 +373,8 @@ func (m Model) renderHelp() string {
 		{
 			"Filtering & Sorting",
 			[]struct{ key, desc string }{
-				{"f", "Open filter menu"},
-				{"s", "Open sort menu"},
-				{"R", "Reverse sort order"},
+				{"f", "Filter menu (multi-select, !=cycle, *=reset)"},
+				{"s", "Sort menu (multi-select, R=reverse, *=reset)"},
 				{"/", "Search repositories"},
 			},
 		},
@@ -299,16 +397,24 @@ func (m Model) renderHelp() string {
 	}
 
 	for _, section := range sections {
-		b.WriteString(styles.HeaderStyle.Render(section.title))
+		b.WriteString(sectionStyle.Render(section.title))
 		b.WriteString("\n")
 		for _, k := range section.keys {
 			b.WriteString(fmt.Sprintf("  %s  %s\n",
-				styles.HelpKeyStyle.Render(fmt.Sprintf("%-15s", k.key)),
+				styles.HelpKeyStyle.Render(fmt.Sprintf("%-20s", k.key)),
 				styles.HelpDescStyle.Render(k.desc)))
 		}
 		b.WriteString("\n")
 	}
 
+	contentLines := strings.Count(b.String(), "\n")
+	footerHeight := 1
+	paddingNeeded := m.height - contentLines - footerHeight - 1
+	if paddingNeeded > 0 {
+		b.WriteString(strings.Repeat("\n", paddingNeeded))
+	} else {
+		b.WriteString("\n")
+	}
 	b.WriteString(styles.FooterStyle.Render("Press ? or esc to close"))
 
 	return b.String()
@@ -322,7 +428,7 @@ func (m Model) renderRepoDetail() string {
 
 	var b strings.Builder
 
-	b.WriteString(styles.TitleStyle.Render(summary.Name()))
+	b.WriteString(m.renderBreadcrumbs())
 	b.WriteString("\n")
 	b.WriteString(styles.SubtitleStyle.Render(summary.Path))
 	b.WriteString("\n\n")
@@ -339,8 +445,20 @@ func (m Model) renderRepoDetail() string {
 		b.WriteString(m.renderWorktreeList())
 	}
 
-	b.WriteString("\n")
-	b.WriteString(styles.FooterStyle.Render("tab: switch tabs  j/k: navigate  esc: back"))
+	footer := "tab: switch tabs  j/k: navigate  esc: back"
+	if m.detailTab == DetailTabBranches {
+		footer = "tab: switch tabs  j/k: navigate  enter: view branch  esc: back"
+	}
+
+	contentLines := strings.Count(b.String(), "\n")
+	footerHeight := 1
+	paddingNeeded := m.height - contentLines - footerHeight - 1
+	if paddingNeeded > 0 {
+		b.WriteString(strings.Repeat("\n", paddingNeeded))
+	} else {
+		b.WriteString("\n")
+	}
+	b.WriteString(styles.FooterStyle.Render(footer))
 
 	return b.String()
 }
@@ -371,7 +489,12 @@ func (m Model) renderDetailTabs() string {
 
 func (m Model) renderBranchList() string {
 	if len(m.branches) == 0 {
-		return styles.SubtitleStyle.Render("  No branches found")
+		emptyStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(styles.Surface1).
+			Padding(2, 4).
+			Foreground(styles.Subtext0)
+		return emptyStyle.Render("No branches found")
 	}
 
 	var rows []string
@@ -420,11 +543,15 @@ func (m Model) renderBranchList() string {
 			nameStyle = nameStyle.Background(styles.Surface0)
 		}
 
-		row := fmt.Sprintf("%s%s  %-20s  %-10s  %s",
+		formattedName := fmt.Sprintf("%-20s", name)
+		formattedUpstream := fmt.Sprintf("%-20s", upstream)
+		formattedStatus := fmt.Sprintf("%-10s", status)
+
+		row := fmt.Sprintf("%s%s  %s  %s  %s",
 			cursor,
-			nameStyle.Render(fmt.Sprintf("%-20s", name)),
-			style.Render(upstream),
-			style.Render(status),
+			nameStyle.Render(formattedName),
+			style.Render(formattedUpstream),
+			style.Render(formattedStatus),
 			style.Render(lastCommit),
 		)
 		rows = append(rows, row)
@@ -435,7 +562,12 @@ func (m Model) renderBranchList() string {
 
 func (m Model) renderStashList() string {
 	if len(m.stashes) == 0 {
-		return styles.SubtitleStyle.Render("  No stashes found")
+		emptyStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(styles.Surface1).
+			Padding(2, 4).
+			Foreground(styles.Subtext0)
+		return emptyStyle.Render("No stashes found\n\nStashes are only available for git repositories.\nJJ repositories use the working copy change instead.")
 	}
 
 	var rows []string
@@ -460,10 +592,13 @@ func (m Model) renderStashList() string {
 			style = styles.TableRowStyle
 		}
 
-		row := fmt.Sprintf("%s%-8s  %s  %s",
+		formattedIndex := fmt.Sprintf("%-8s", index)
+		formattedMessage := fmt.Sprintf("%-40s", message)
+
+		row := fmt.Sprintf("%s%s  %s  %s",
 			cursor,
-			style.Render(index),
-			style.Render(fmt.Sprintf("%-40s", message)),
+			style.Render(formattedIndex),
+			style.Render(formattedMessage),
 			style.Render(date),
 		)
 		rows = append(rows, row)
@@ -474,7 +609,12 @@ func (m Model) renderStashList() string {
 
 func (m Model) renderWorktreeList() string {
 	if len(m.worktrees) == 0 {
-		return styles.SubtitleStyle.Render("  No worktrees found")
+		emptyStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(styles.Surface1).
+			Padding(2, 4).
+			Foreground(styles.Subtext0)
+		return emptyStyle.Render("No worktrees/workspaces found")
 	}
 
 	var rows []string
@@ -511,10 +651,18 @@ func (m Model) renderWorktreeList() string {
 			style = styles.TableRowStyle
 		}
 
+		formattedPath := fmt.Sprintf("%-30s", path)
+		formattedBranch := fmt.Sprintf("%-20s", branch)
+
+		branchStyleLocal := styles.BranchStyle
+		if i == m.detailCursor {
+			branchStyleLocal = branchStyleLocal.Background(styles.Surface0)
+		}
+
 		row := fmt.Sprintf("%s%s  %s  %s",
 			cursor,
-			style.Render(fmt.Sprintf("%-30s", path)),
-			styles.BranchStyle.Render(fmt.Sprintf("%-20s", branch)),
+			style.Render(formattedPath),
+			branchStyleLocal.Render(formattedBranch),
 			style.Render(status),
 		)
 		rows = append(rows, row)
@@ -526,11 +674,19 @@ func (m Model) renderWorktreeList() string {
 func (m Model) renderFilterModal() string {
 	var b strings.Builder
 
-	b.WriteString(styles.TitleStyle.Render("Select Filter"))
+	b.WriteString(styles.TitleStyle.Render("Filter Repositories"))
 	b.WriteString("\n\n")
 
-	modes := models.AllFilterModes()
-	currentFilter := m.CurrentFilter()
+	modes := models.SelectableFilterModes()
+
+	headerStyle := lipgloss.NewStyle().
+		Foreground(styles.Subtext0).
+		Bold(true)
+
+	header := fmt.Sprintf("  %-4s  %-3s  %-15s  %s",
+		"", "Key", "Filter", "Count")
+	b.WriteString(headerStyle.Render(header))
+	b.WriteString("\n")
 
 	for i, mode := range modes {
 		cursor := "  "
@@ -538,36 +694,68 @@ func (m Model) renderFilterModal() string {
 			cursor = "> "
 		}
 
-		indicator := "  "
-		if mode == currentFilter {
-			indicator = "* "
+		var filterState models.ActiveFilter
+		for _, f := range m.activeFilters {
+			if f.Mode == mode {
+				filterState = f
+				break
+			}
 		}
 
+		checkbox := "   "
+		if filterState.Enabled && filterState.Inverted {
+			checkbox = "NOT"
+		} else if filterState.Enabled {
+			checkbox = " ✓ "
+		}
+
+		shortKey := mode.ShortKey()
 		label := mode.String()
 		count := m.countForFilter(mode)
-		countStr := fmt.Sprintf("(%d)", count)
 
-		var style lipgloss.Style
+		var rowStyle lipgloss.Style
 		if i == m.filterCursor {
-			style = styles.SelectedRowStyle
+			rowStyle = styles.SelectedRowStyle
 		} else {
-			style = styles.TableRowStyle
+			rowStyle = styles.TableRowStyle
 		}
 
-		row := fmt.Sprintf("%s%s%s  %s",
+		checkStyle := lipgloss.NewStyle().Foreground(styles.Green)
+		if filterState.Inverted {
+			checkStyle = lipgloss.NewStyle().Foreground(styles.Peach)
+		}
+
+		keyStyle := lipgloss.NewStyle().
+			Foreground(styles.Mauve).
+			Bold(true)
+
+		formattedCheck := fmt.Sprintf("%-4s", checkbox)
+		formattedKey := fmt.Sprintf("%-3s", shortKey)
+		formattedLabel := fmt.Sprintf("%-15s", label)
+		formattedCount := fmt.Sprintf("%d", count)
+
+		row := fmt.Sprintf("%s%s  %s  %s  %s",
 			cursor,
-			styles.PROpenStyle.Render(indicator),
-			style.Render(fmt.Sprintf("%-12s", label)),
-			styles.SubtitleStyle.Render(countStr),
+			checkStyle.Render(formattedCheck),
+			keyStyle.Render(formattedKey),
+			rowStyle.Render(formattedLabel),
+			styles.SubtitleStyle.Render(formattedCount),
 		)
 		b.WriteString(row)
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(styles.FooterStyle.Render("enter: select  esc: cancel"))
+	helpLines := []string{
+		styles.FooterKeyStyle.Render("enter/key") + styles.FooterDescStyle.Render(" toggle"),
+		styles.FooterKeyStyle.Render("!") + styles.FooterDescStyle.Render(" cycle (off/on/NOT)"),
+		styles.FooterKeyStyle.Render("*") + styles.FooterDescStyle.Render(" reset"),
+		styles.FooterKeyStyle.Render("esc") + styles.FooterDescStyle.Render(" close"),
+	}
+	b.WriteString(strings.Join(helpLines, "  "))
 
-	return b.String()
+	content := b.String()
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
 
 func (m Model) countForFilter(mode models.FilterMode) int {
@@ -604,15 +792,19 @@ func (m Model) countForFilter(mode models.FilterMode) int {
 func (m Model) renderSortModal() string {
 	var b strings.Builder
 
-	b.WriteString(styles.TitleStyle.Render("Select Sort"))
+	b.WriteString(styles.TitleStyle.Render("Sort Repositories"))
 	b.WriteString("\n\n")
 
-	modes := []models.SortMode{
-		models.SortModeName,
-		models.SortModeModified,
-		models.SortModeStatus,
-		models.SortModeBranch,
-	}
+	modes := models.AllSortModes()
+
+	headerStyle := lipgloss.NewStyle().
+		Foreground(styles.Subtext0).
+		Bold(true)
+
+	header := fmt.Sprintf("  %-4s  %-3s  %-3s  %-15s  %s",
+		"", "Key", "Pri", "Sort By", "Rev")
+	b.WriteString(headerStyle.Render(header))
+	b.WriteString("\n")
 
 	for i, mode := range modes {
 		cursor := "  "
@@ -620,40 +812,73 @@ func (m Model) renderSortModal() string {
 			cursor = "> "
 		}
 
-		indicator := "  "
-		if mode == m.sortMode {
-			indicator = "* "
+		var sortState models.ActiveSort
+		for _, s := range m.activeSorts {
+			if s.Mode == mode {
+				sortState = s
+				break
+			}
 		}
 
+		indicator := "   "
+		if sortState.Enabled {
+			indicator = " ✓ "
+		}
+
+		priority := "   "
+		if sortState.Enabled {
+			priority = fmt.Sprintf(" %d ", sortState.Priority+1)
+		}
+
+		reverseIcon := "   "
+		if sortState.Reverse {
+			reverseIcon = " ✓ "
+		}
+
+		shortKey := mode.ShortKey()
 		label := mode.String()
 
-		var style lipgloss.Style
+		var rowStyle lipgloss.Style
 		if i == m.sortCursor {
-			style = styles.SelectedRowStyle
+			rowStyle = styles.SelectedRowStyle
 		} else {
-			style = styles.TableRowStyle
+			rowStyle = styles.TableRowStyle
 		}
 
-		row := fmt.Sprintf("%s%s%s",
+		checkStyle := lipgloss.NewStyle().Foreground(styles.Green)
+		keyStyle := lipgloss.NewStyle().
+			Foreground(styles.Mauve).
+			Bold(true)
+
+		formattedIndicator := fmt.Sprintf("%-4s", indicator)
+		formattedKey := fmt.Sprintf("%-3s", shortKey)
+		formattedPriority := fmt.Sprintf("%-3s", priority)
+		formattedLabel := fmt.Sprintf("%-15s", label)
+		formattedReverse := fmt.Sprintf("%s", reverseIcon)
+
+		row := fmt.Sprintf("%s%s  %s  %s  %s  %s",
 			cursor,
-			styles.PROpenStyle.Render(indicator),
-			style.Render(label),
+			checkStyle.Render(formattedIndicator),
+			keyStyle.Render(formattedKey),
+			rowStyle.Render(formattedPriority),
+			rowStyle.Render(formattedLabel),
+			checkStyle.Render(formattedReverse),
 		)
 		b.WriteString(row)
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	reverseLabel := "[ ] Reverse order"
-	if m.sortReverse {
-		reverseLabel = "[x] Reverse order"
+	helpLines := []string{
+		styles.FooterKeyStyle.Render("enter/key") + styles.FooterDescStyle.Render(" toggle"),
+		styles.FooterKeyStyle.Render("R") + styles.FooterDescStyle.Render(" reverse selected"),
+		styles.FooterKeyStyle.Render("*") + styles.FooterDescStyle.Render(" reset"),
+		styles.FooterKeyStyle.Render("esc") + styles.FooterDescStyle.Render(" close"),
 	}
-	b.WriteString(fmt.Sprintf("    %s\n", styles.SubtitleStyle.Render(reverseLabel)))
+	b.WriteString(strings.Join(helpLines, "  "))
 
-	b.WriteString("\n")
-	b.WriteString(styles.FooterStyle.Render("enter: select  R: toggle reverse  esc: cancel"))
-
-	return b.String()
+	content := b.String()
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
 
 func (m Model) renderBatchProgress() string {
@@ -705,6 +930,185 @@ func (m Model) renderBatchProgress() string {
 	}
 
 	return b.String()
+}
+
+func (m Model) renderBranchDetail() string {
+	var b strings.Builder
+
+	summary, ok := m.summaries[m.selectedRepo]
+	if !ok {
+		return "Repository not found"
+	}
+
+	b.WriteString(m.renderBreadcrumbs())
+	b.WriteString("\n\n")
+
+	sectionStyle := lipgloss.NewStyle().
+		Foreground(styles.Blue).
+		Bold(true).
+		PaddingLeft(1)
+
+	infoStyle := lipgloss.NewStyle().
+		Foreground(styles.Text).
+		PaddingLeft(2)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(styles.Subtext0).
+		Width(16)
+
+	b.WriteString(sectionStyle.Render("Branch Information"))
+	b.WriteString("\n\n")
+
+	if m.selectedBranch.Upstream != "" {
+		b.WriteString(infoStyle.Render(
+			labelStyle.Render("Upstream:") + " " + m.selectedBranch.Upstream,
+		))
+		b.WriteString("\n")
+	}
+
+	if m.selectedBranch.Ahead > 0 || m.selectedBranch.Behind > 0 {
+		status := ""
+		if m.selectedBranch.Ahead > 0 {
+			status += styles.AheadStyle.Render(fmt.Sprintf("↑%d ahead", m.selectedBranch.Ahead))
+		}
+		if m.selectedBranch.Behind > 0 {
+			if status != "" {
+				status += " "
+			}
+			status += styles.BehindStyle.Render(fmt.Sprintf("↓%d behind", m.selectedBranch.Behind))
+		}
+		b.WriteString(infoStyle.Render(
+			labelStyle.Render("Tracking:") + " " + status,
+		))
+		b.WriteString("\n")
+	}
+
+	defaultBranch := m.findDefaultBranch()
+	if defaultBranch != "" && m.selectedBranch.Name != defaultBranch {
+		ahead, behind := m.compareToDefaultBranch(defaultBranch)
+		if ahead >= 0 && behind >= 0 {
+			status := ""
+			if ahead > 0 {
+				status += styles.AheadStyle.Render(fmt.Sprintf("↑%d ahead", ahead))
+			}
+			if behind > 0 {
+				if status != "" {
+					status += " "
+				}
+				status += styles.BehindStyle.Render(fmt.Sprintf("↓%d behind", behind))
+			}
+			if status == "" {
+				status = styles.CleanStyle.Render("up to date")
+			}
+			b.WriteString(infoStyle.Render(
+				labelStyle.Render("vs "+defaultBranch+":") + " " + status,
+			))
+			b.WriteString("\n")
+		}
+	}
+
+	if len(m.branchCommits) > 0 {
+		lastCommit := m.branchCommits[0]
+		b.WriteString(infoStyle.Render(
+			labelStyle.Render("Last commit:") + " " + lastCommit.RelativeDate(),
+		))
+		b.WriteString("\n")
+		b.WriteString(infoStyle.Render(
+			labelStyle.Render("Author:") + " " + lastCommit.Author,
+		))
+		b.WriteString("\n")
+	}
+
+	if summary.PRInfo != nil && m.selectedBranch.IsCurrent {
+		b.WriteString(infoStyle.Render(
+			labelStyle.Render("Pull Request:") + " " + styles.PROpenStyle.Render(fmt.Sprintf("#%d", summary.PRInfo.Number)) + " " + summary.PRInfo.Title,
+		))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(sectionStyle.Render("Recent Commits"))
+	b.WriteString("\n\n")
+
+	if len(m.branchCommits) == 0 {
+		emptyStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(styles.Surface1).
+			Padding(1, 2).
+			Foreground(styles.Subtext0)
+		b.WriteString(emptyStyle.Render("No commits found"))
+	} else {
+		maxCommits := 10
+		if len(m.branchCommits) < maxCommits {
+			maxCommits = len(m.branchCommits)
+		}
+		for i := 0; i < maxCommits; i++ {
+			commit := m.branchCommits[i]
+			hash := styles.SubtitleStyle.Render(commit.ShortHash)
+			subject := truncate(commit.Subject, 50)
+			author := truncate(commit.Author, 15)
+			date := commit.RelativeDate()
+
+			line := fmt.Sprintf("  %s  %-50s  %s  %s\n",
+				hash,
+				subject,
+				styles.SubtitleStyle.Render(author),
+				styles.SubtitleStyle.Render(date),
+			)
+			b.WriteString(line)
+		}
+	}
+
+	contentLines := strings.Count(b.String(), "\n")
+	footerHeight := 1
+	paddingNeeded := m.height - contentLines - footerHeight - 1
+	if paddingNeeded > 0 {
+		b.WriteString(strings.Repeat("\n", paddingNeeded))
+	} else {
+		b.WriteString("\n")
+	}
+	b.WriteString(styles.FooterStyle.Render("esc: back"))
+
+	return b.String()
+}
+
+func (m Model) findDefaultBranch() string {
+	for _, branch := range m.branches {
+		if branch.Name == "main" || branch.Name == "master" {
+			return branch.Name
+		}
+	}
+	return ""
+}
+
+func (m Model) compareToDefaultBranch(defaultBranch string) (int, int) {
+	if defaultBranch == "" || m.selectedBranch.Name == defaultBranch {
+		return -1, -1
+	}
+
+	for _, branch := range m.branches {
+		if branch.Name == defaultBranch {
+			ahead := 0
+			behind := 0
+
+			for _, commit := range m.branchCommits {
+				found := false
+				for _, defCommit := range m.branchCommits {
+					if commit.Hash == defCommit.Hash {
+						found = true
+						break
+					}
+				}
+				if !found {
+					ahead++
+				}
+			}
+
+			return ahead, behind
+		}
+	}
+
+	return -1, -1
 }
 
 func truncate(s string, maxLen int) string {

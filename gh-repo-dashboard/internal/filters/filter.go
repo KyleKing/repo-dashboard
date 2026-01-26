@@ -22,6 +22,45 @@ func FilterRepos(paths []string, summaries map[string]models.RepoSummary, mode m
 	return filtered
 }
 
+func FilterReposMulti(paths []string, summaries map[string]models.RepoSummary, activeFilters []models.ActiveFilter) []string {
+	enabledFilters := []models.ActiveFilter{}
+	for _, f := range activeFilters {
+		if f.Enabled && f.Mode != models.FilterModeAll {
+			enabledFilters = append(enabledFilters, f)
+		}
+	}
+
+	if len(enabledFilters) == 0 {
+		return paths
+	}
+
+	var filtered []string
+	for _, path := range paths {
+		summary, ok := summaries[path]
+		if !ok {
+			continue
+		}
+
+		passesAll := true
+		for _, f := range enabledFilters {
+			passes := passesFilter(summary, f.Mode)
+			if f.Inverted {
+				passes = !passes
+			}
+			if !passes {
+				passesAll = false
+				break
+			}
+		}
+
+		if passesAll {
+			filtered = append(filtered, path)
+		}
+	}
+
+	return filtered
+}
+
 func passesFilter(s models.RepoSummary, mode models.FilterMode) bool {
 	switch mode {
 	case models.FilterModeAll:
@@ -56,6 +95,24 @@ func FilterAndSort(
 	}
 
 	sorted := SortPaths(filtered, summaries, sortMode, reverse)
+
+	return sorted
+}
+
+func FilterAndSortMulti(
+	paths []string,
+	summaries map[string]models.RepoSummary,
+	activeFilters []models.ActiveFilter,
+	activeSorts []models.ActiveSort,
+	searchText string,
+) []string {
+	filtered := FilterReposMulti(paths, summaries, activeFilters)
+
+	if searchText != "" {
+		filtered = SearchRepos(filtered, summaries, searchText)
+	}
+
+	sorted := SortPathsMulti(filtered, summaries, activeSorts)
 
 	return sorted
 }

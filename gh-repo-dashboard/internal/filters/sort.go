@@ -79,3 +79,52 @@ func compareByBranch(a, b models.RepoSummary) bool {
 	}
 	return compareByName(a, b)
 }
+
+func SortPathsMulti(paths []string, summaries map[string]models.RepoSummary, activeSorts []models.ActiveSort) []string {
+	if len(paths) == 0 {
+		return paths
+	}
+
+	enabledSorts := []models.ActiveSort{}
+	for _, s := range activeSorts {
+		if s.Enabled {
+			enabledSorts = append(enabledSorts, s)
+		}
+	}
+
+	if len(enabledSorts) == 0 {
+		return paths
+	}
+
+	sort.Slice(enabledSorts, func(i, j int) bool {
+		return enabledSorts[i].Priority < enabledSorts[j].Priority
+	})
+
+	sorted := make([]string, len(paths))
+	copy(sorted, paths)
+
+	sort.Slice(sorted, func(i, j int) bool {
+		si := summaries[sorted[i]]
+		sj := summaries[sorted[j]]
+
+		for _, activeSort := range enabledSorts {
+			less := comparePaths(si, sj, activeSort.Mode)
+			if activeSort.Reverse {
+				less = !less
+			}
+
+			greater := comparePaths(sj, si, activeSort.Mode)
+			if activeSort.Reverse {
+				greater = !greater
+			}
+
+			if less != greater {
+				return less
+			}
+		}
+
+		return false
+	})
+
+	return sorted
+}

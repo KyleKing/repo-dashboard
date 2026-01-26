@@ -12,6 +12,7 @@ type ViewMode int
 const (
 	ViewModeRepoList ViewMode = iota
 	ViewModeRepoDetail
+	ViewModeBranchDetail
 	ViewModeHelp
 	ViewModeFilter
 	ViewModeSort
@@ -37,8 +38,7 @@ type Model struct {
 	cursor        int
 
 	activeFilters []models.ActiveFilter
-	sortMode      models.SortMode
-	sortReverse   bool
+	activeSorts   []models.ActiveSort
 	searchText    string
 	searching     bool
 	searchInput   textinput.Model
@@ -56,6 +56,9 @@ type Model struct {
 	branches       []models.BranchInfo
 	stashes        []models.StashDetail
 	worktrees      []models.WorktreeInfo
+
+	selectedBranch models.BranchInfo
+	branchCommits  []models.CommitInfo
 
 	filterCursor int
 	sortCursor   int
@@ -80,12 +83,21 @@ func New(scanPaths []string, maxDepth int) Model {
 		filters = append(filters, models.NewActiveFilter(mode))
 	}
 
+	sorts := make([]models.ActiveSort, 0, len(models.AllSortModes()))
+	for i, mode := range models.AllSortModes() {
+		sort := models.NewActiveSort(mode, i)
+		if mode == models.SortModeName {
+			sort.Enabled = true
+		}
+		sorts = append(sorts, sort)
+	}
+
 	return Model{
 		scanPaths:     scanPaths,
 		maxDepth:      maxDepth,
 		summaries:     make(map[string]models.RepoSummary),
 		activeFilters: filters,
-		sortMode:      models.SortModeName,
+		activeSorts:   sorts,
 		searchInput:   ti,
 		viewMode:      ViewModeRepoList,
 		loading:       true,
@@ -107,9 +119,54 @@ func (m Model) CurrentFilter() models.FilterMode {
 	return models.FilterModeAll
 }
 
+func (m Model) ActiveFilterModes() []models.FilterMode {
+	var modes []models.FilterMode
+	for _, f := range m.activeFilters {
+		if f.Enabled && f.Mode != models.FilterModeAll {
+			modes = append(modes, f.Mode)
+		}
+	}
+	return modes
+}
+
 func (m *Model) SetFilter(mode models.FilterMode) {
 	for i := range m.activeFilters {
 		m.activeFilters[i].Enabled = m.activeFilters[i].Mode == mode
+	}
+}
+
+func (m *Model) ToggleFilter(mode models.FilterMode) {
+	if mode == models.FilterModeAll {
+		return
+	}
+
+	for i := range m.activeFilters {
+		if m.activeFilters[i].Mode == mode {
+			m.activeFilters[i].Enabled = !m.activeFilters[i].Enabled
+			if !m.activeFilters[i].Enabled {
+				m.activeFilters[i].Inverted = false
+			}
+		}
+	}
+}
+
+func (m *Model) CycleFilterState(mode models.FilterMode) {
+	if mode == models.FilterModeAll {
+		return
+	}
+
+	for i := range m.activeFilters {
+		if m.activeFilters[i].Mode == mode {
+			if !m.activeFilters[i].Enabled {
+				m.activeFilters[i].Enabled = true
+				m.activeFilters[i].Inverted = false
+			} else if !m.activeFilters[i].Inverted {
+				m.activeFilters[i].Inverted = true
+			} else {
+				m.activeFilters[i].Enabled = false
+				m.activeFilters[i].Inverted = false
+			}
+		}
 	}
 }
 
@@ -126,8 +183,47 @@ func (m *Model) CycleFilter() {
 	m.SetFilter(models.FilterModeAll)
 }
 
-func (m *Model) CycleSort() {
-	m.sortMode = m.sortMode.Next()
+func (m *Model) ToggleSort(mode models.SortMode) {
+	for i := range m.activeSorts {
+		if m.activeSorts[i].Mode == mode {
+			if m.activeSorts[i].Enabled {
+				m.activeSorts[i].Enabled = false
+				m.activeSorts[i].Priority = len(m.activeSorts)
+			} else {
+				m.activeSorts[i].Enabled = true
+				highestPriority := -1
+				for _, s := range m.activeSorts {
+					if s.Enabled && s.Priority > highestPriority {
+						highestPriority = s.Priority
+					}
+				}
+				m.activeSorts[i].Priority = highestPriority + 1
+			}
+		}
+	}
+}
+
+func (m *Model) ResetFilters() {
+	for i := range m.activeFilters {
+		m.activeFilters[i].Enabled = m.activeFilters[i].Mode == models.FilterModeAll
+		m.activeFilters[i].Inverted = false
+	}
+}
+
+func (m *Model) ResetSorts() {
+	for i := range m.activeSorts {
+		m.activeSorts[i].Enabled = m.activeSorts[i].Mode == models.SortModeName
+		m.activeSorts[i].Priority = i
+		m.activeSorts[i].Reverse = false
+	}
+}
+
+func (m *Model) ToggleSortReverse(mode models.SortMode) {
+	for i := range m.activeSorts {
+		if m.activeSorts[i].Mode == mode {
+			m.activeSorts[i].Reverse = !m.activeSorts[i].Reverse
+		}
+	}
 }
 
 func (m Model) DirtyCount() int {

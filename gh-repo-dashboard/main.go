@@ -10,18 +10,45 @@ import (
 	"github.com/kyleking/gh-repo-dashboard/internal/app"
 )
 
+func findGitRoot(startPath string) (string, bool) {
+	current := startPath
+	for {
+		gitDir := filepath.Join(current, ".git")
+		jjDir := filepath.Join(current, ".jj")
+
+		if _, err := os.Stat(gitDir); err == nil {
+			return current, true
+		}
+		if _, err := os.Stat(jjDir); err == nil {
+			return current, true
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+	return startPath, false
+}
+
 func main() {
-	depth := flag.Int("depth", 3, "Maximum directory depth to scan")
+	depth := flag.Int("depth", 1, "Maximum directory depth to scan")
 	flag.Parse()
 
 	scanPaths := flag.Args()
 	if len(scanPaths) == 0 {
-		home, err := os.UserHomeDir()
+		cwd, err := os.Getwd()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error getting home directory: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error getting current directory: %v\n", err)
 			os.Exit(1)
 		}
-		scanPaths = []string{filepath.Join(home, "Developer")}
+
+		if repoRoot, found := findGitRoot(cwd); found {
+			scanPaths = []string{repoRoot}
+		} else {
+			scanPaths = []string{cwd}
+		}
 	}
 
 	absPathList := make([]string, 0, len(scanPaths))

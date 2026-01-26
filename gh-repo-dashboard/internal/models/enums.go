@@ -32,19 +32,19 @@ const (
 func (f FilterMode) String() string {
 	switch f {
 	case FilterModeAll:
-		return "ALL"
+		return "All"
 	case FilterModeAhead:
-		return "AHEAD"
+		return "Ahead"
 	case FilterModeBehind:
-		return "BEHIND"
+		return "Behind"
 	case FilterModeDirty:
-		return "DIRTY"
+		return "Dirty"
 	case FilterModeHasPR:
-		return "HAS_PR"
+		return "Has PR"
 	case FilterModeHasStash:
-		return "HAS_STASH"
+		return "Has Stash"
 	default:
-		return "UNKNOWN"
+		return "Unknown"
 	}
 }
 
@@ -78,6 +78,16 @@ func AllFilterModes() []FilterMode {
 	}
 }
 
+func SelectableFilterModes() []FilterMode {
+	return []FilterMode{
+		FilterModeDirty,
+		FilterModeAhead,
+		FilterModeBehind,
+		FilterModeHasPR,
+		FilterModeHasStash,
+	}
+}
+
 type SortMode int
 
 const (
@@ -90,20 +100,44 @@ const (
 func (s SortMode) String() string {
 	switch s {
 	case SortModeName:
-		return "NAME"
+		return "Name"
 	case SortModeModified:
-		return "MODIFIED"
+		return "Modified"
 	case SortModeStatus:
-		return "STATUS"
+		return "Status"
 	case SortModeBranch:
-		return "BRANCH"
+		return "Branch"
 	default:
-		return "UNKNOWN"
+		return "Unknown"
+	}
+}
+
+func (s SortMode) ShortKey() string {
+	switch s {
+	case SortModeName:
+		return "n"
+	case SortModeModified:
+		return "m"
+	case SortModeStatus:
+		return "s"
+	case SortModeBranch:
+		return "b"
+	default:
+		return "?"
 	}
 }
 
 func (s SortMode) Next() SortMode {
 	return SortMode((int(s) + 1) % 4)
+}
+
+func AllSortModes() []SortMode {
+	return []SortMode{
+		SortModeName,
+		SortModeModified,
+		SortModeStatus,
+		SortModeBranch,
+	}
 }
 
 type RepoStatus int

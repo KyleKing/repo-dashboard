@@ -42,6 +42,12 @@ type DetailLoadedMsg struct {
 	Worktrees []models.WorktreeInfo
 }
 
+type BranchDetailLoadedMsg struct {
+	Path     string
+	Branch   models.BranchInfo
+	Commits  []models.CommitInfo
+}
+
 type BatchResult struct {
 	Path    string
 	Success bool

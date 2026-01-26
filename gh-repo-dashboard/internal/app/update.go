@@ -41,6 +41,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.repoPaths = msg.Paths
 		m.loadingCount = len(msg.Paths)
 		m.loadedCount = 0
+
+		if len(msg.Paths) == 0 {
+			m.loading = false
+		}
+
 		m.updateFilteredPaths()
 
 		var cmds []tea.Cmd
@@ -51,10 +56,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case RepoSummaryLoadedMsg:
 		m.loadedCount++
-		if m.loadedCount >= m.loadingCount {
-			m.loading = false
-		}
 
+		var prCmd tea.Cmd
 		if msg.Error != nil {
 			summary := models.RepoSummary{
 				Path:    msg.Path,
@@ -64,15 +67,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.summaries[msg.Path] = summary
 		} else {
 			m.summaries[msg.Path] = msg.Summary
+			prCmd = loadPRCmd(msg.Path, msg.Summary.Branch, msg.Summary.Upstream)
 		}
-		m.updateFilteredPaths()
-		return m, loadPRCmd(msg.Path, msg.Summary.Branch, msg.Summary.Upstream)
+
+		if m.loadedCount >= m.loadingCount {
+			m.loading = false
+			m.updateFilteredPaths()
+		}
+
+		return m, prCmd
 
 	case PRLoadedMsg:
 		if summary, ok := m.summaries[msg.Path]; ok {
 			summary.PRInfo = msg.PRInfo
 			m.summaries[msg.Path] = summary
-			m.updateFilteredPaths()
 		}
 		return m, nil
 
@@ -88,6 +96,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.branches = msg.Branches
 			m.stashes = msg.Stashes
 			m.worktrees = msg.Worktrees
+		}
+		return m, nil
+
+	case BranchDetailLoadedMsg:
+		if msg.Path == m.selectedRepo {
+			m.branchCommits = msg.Commits
 		}
 		return m, nil
 
@@ -168,6 +182,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.viewMode {
 		case ViewModeRepoDetail:
 			m.viewMode = ViewModeRepoList
+		case ViewModeBranchDetail:
+			m.viewMode = ViewModeRepoDetail
 		case ViewModeHelp:
 			m.viewMode = ViewModeRepoList
 		case ViewModeFilter:
@@ -188,7 +204,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Sort):
 		m.viewMode = ViewModeSort
-		m.sortCursor = int(m.sortMode)
+		m.sortCursor = 0
 		return m, nil
 
 	case key.Matches(msg, m.keys.Search):
@@ -196,10 +212,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchInput.Focus()
 		return m, nil
 
-	case key.Matches(msg, m.keys.Reverse):
-		m.sortReverse = !m.sortReverse
-		m.updateFilteredPaths()
-		return m, nil
 
 	case key.Matches(msg, m.keys.FetchAll):
 		return m.startBatchTask("Fetch All", batchFetchAllCmd)
@@ -261,6 +273,14 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case key.Matches(msg, m.keys.Enter):
+		if m.detailTab == DetailTabBranches && m.detailCursor < len(m.branches) {
+			m.selectedBranch = m.branches[m.detailCursor]
+			m.viewMode = ViewModeBranchDetail
+			return m, loadBranchDetailCmd(m.selectedRepo, m.selectedBranch.Name)
+		}
+		return m, nil
+
 	case key.Matches(msg, m.keys.Help):
 		m.viewMode = ViewModeHelp
 		return m, nil
@@ -282,7 +302,7 @@ func (m Model) detailListLen() int {
 }
 
 func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	modes := models.AllFilterModes()
+	modes := models.SelectableFilterModes()
 
 	switch {
 	case key.Matches(msg, m.keys.Quit):
@@ -306,19 +326,41 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Enter):
 		selectedMode := modes[m.filterCursor]
-		for i := range m.activeFilters {
-			m.activeFilters[i].Enabled = m.activeFilters[i].Mode == selectedMode
-		}
+		m.ToggleFilter(selectedMode)
 		m.updateFilteredPaths()
 		m.cursor = 0
-		m.viewMode = ViewModeRepoList
 		return m, nil
+
+	case msg.String() == "!":
+		selectedMode := modes[m.filterCursor]
+		m.CycleFilterState(selectedMode)
+		m.updateFilteredPaths()
+		m.cursor = 0
+		return m, nil
+
+	case msg.String() == "*":
+		m.ResetFilters()
+		m.updateFilteredPaths()
+		m.cursor = 0
+		return m, nil
+
+	default:
+		for _, mode := range modes {
+			if msg.String() == mode.ShortKey() {
+				m.ToggleFilter(mode)
+				m.updateFilteredPaths()
+				m.cursor = 0
+				return m, nil
+			}
+		}
 	}
 
 	return m, nil
 }
 
 func (m Model) handleSortKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	modes := models.AllSortModes()
+
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
@@ -334,21 +376,36 @@ func (m Model) handleSortKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Down):
-		if m.sortCursor < 3 {
+		if m.sortCursor < len(modes)-1 {
 			m.sortCursor++
 		}
 		return m, nil
 
 	case key.Matches(msg, m.keys.Enter):
-		m.sortMode = models.SortMode(m.sortCursor)
+		selectedMode := modes[m.sortCursor]
+		m.ToggleSort(selectedMode)
 		m.updateFilteredPaths()
-		m.viewMode = ViewModeRepoList
 		return m, nil
 
 	case key.Matches(msg, m.keys.Reverse):
-		m.sortReverse = !m.sortReverse
+		selectedMode := modes[m.sortCursor]
+		m.ToggleSortReverse(selectedMode)
 		m.updateFilteredPaths()
 		return m, nil
+
+	case msg.String() == "*":
+		m.ResetSorts()
+		m.updateFilteredPaths()
+		return m, nil
+
+	default:
+		for _, mode := range modes {
+			if msg.String() == mode.ShortKey() {
+				m.ToggleSort(mode)
+				m.updateFilteredPaths()
+				return m, nil
+			}
+		}
 	}
 
 	return m, nil
@@ -400,13 +457,12 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateFilteredPaths() {
-	m.filteredPaths = filters.FilterAndSort(
+	m.filteredPaths = filters.FilterAndSortMulti(
 		m.repoPaths,
 		m.summaries,
-		m.CurrentFilter(),
-		m.sortMode,
+		m.activeFilters,
+		m.activeSorts,
 		m.searchText,
-		m.sortReverse,
 	)
 
 	if m.cursor >= len(m.filteredPaths) {
@@ -475,6 +531,30 @@ func loadDetailCmd(path string) tea.Cmd {
 			Branches:  branches,
 			Stashes:   stashes,
 			Worktrees: worktrees,
+		}
+	}
+}
+
+func loadBranchDetailCmd(repoPath string, branchName string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		ops := vcs.GetOperations(repoPath)
+
+		branches, _ := ops.GetBranchList(ctx, repoPath)
+		var selectedBranch models.BranchInfo
+		for _, b := range branches {
+			if b.Name == branchName {
+				selectedBranch = b
+				break
+			}
+		}
+
+		commits, _ := ops.GetCommitLog(ctx, repoPath, 20)
+
+		return BranchDetailLoadedMsg{
+			Path:    repoPath,
+			Branch:  selectedBranch,
+			Commits: commits,
 		}
 	}
 }
