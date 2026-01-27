@@ -57,6 +57,20 @@ type CopySuccessMsg struct {
 	Text string
 }
 
+type URLOpenedMsg struct {
+	URL string
+}
+
+type StatusMsg struct {
+	Message string
+}
+
+type ClearStatusMsg struct{}
+
+type RefreshCompleteMsg struct {
+	ViewMode ViewMode
+}
+
 type BatchResult struct {
 	Path    string
 	Success bool

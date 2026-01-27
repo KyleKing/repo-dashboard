@@ -25,9 +25,11 @@ type KeyMap struct {
 	PruneRemote   key.Binding
 	CleanupMerged key.Binding
 
-	OpenPR     key.Binding
-	CopyBranch key.Binding
-	OpenURL    key.Binding
+	OpenPR       key.Binding
+	CopyBranch   key.Binding
+	CopyURL      key.Binding
+	CopyPRNumber key.Binding
+	OpenURL      key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -77,8 +79,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("tab", "next tab"),
 		),
 		Refresh: key.NewBinding(
-			key.WithKeys("r"),
-			key.WithHelp("r", "refresh"),
+			key.WithKeys("r", "ctrl+r"),
+			key.WithHelp("r/ctrl+r", "refresh"),
 		),
 		Filter: key.NewBinding(
 			key.WithKeys("f"),
@@ -113,8 +115,16 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("p", "open/create PR"),
 		),
 		CopyBranch: key.NewBinding(
-			key.WithKeys("y"),
-			key.WithHelp("y", "copy branch name"),
+			key.WithKeys("b"),
+			key.WithHelp("b", "copy branch name"),
+		),
+		CopyURL: key.NewBinding(
+			key.WithKeys("u"),
+			key.WithHelp("u", "copy URL"),
+		),
+		CopyPRNumber: key.NewBinding(
+			key.WithKeys("n"),
+			key.WithHelp("n", "copy PR number"),
 		),
 		OpenURL: key.NewBinding(
 			key.WithKeys("o"),

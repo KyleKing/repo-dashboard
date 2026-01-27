@@ -1,54 +1,63 @@
 # Repo Dashboard - Development Guide
 
-K9s-inspired Textual TUI for managing multiple git and jj repositories with progressive loading, filtering, GitHub PR integration, and batch maintenance tasks.
+K9s-inspired Bubble Tea TUI for managing multiple git and jj repositories with progressive loading, filtering, GitHub PR integration, and batch maintenance tasks.
 
 ## Project Overview
 
-**Framework:** Textual (Python TUI framework)
+**Framework:** Bubble Tea (Go TUI framework)
 **Theme:** Catppuccin Macchiato
 **Design Philosophy:** Minimal color, single unified background, borders for hierarchy, vim-style keybindings
 
 ### Architecture
 
 ```
-src/repo_dashboard/
-├── __main__.py      # CLI entry point
-├── app.py           # Main Textual app, UI orchestration
-├── models.py        # Data models (RepoSummary, BranchInfo, PRInfo, etc.)
-├── filters.py       # Filter and sort logic with fuzzy search
-├── vcs_protocol.py  # VCS abstraction protocol
-├── vcs_git.py       # Git implementation
-├── vcs_jj.py        # Jujutsu (jj) implementation
-├── vcs_factory.py   # VCS detection and factory
-├── batch_tasks.py   # Batch operations across repos
-├── git_ops.py       # Legacy git operations (being phased out)
-├── github_ops.py    # GitHub CLI integration
-├── discovery.py     # Repository discovery
-├── cache.py         # TTL-based caching
-├── modals.py        # Modal screens and detail panels
-├── themes.py        # Theme configuration
-├── utils.py         # Utility functions
-└── app.tcss         # Textual CSS styling
-
-tests/
-├── test_app.py         # App integration tests
-├── test_filters.py     # Filter/sort/search tests
-├── test_vcs_factory.py # VCS detection and factory tests
-├── test_vcs_jj.py      # JJ operations tests
-├── test_git_ops.py     # Git operations tests
-├── test_github_ops.py  # GitHub integration tests
-├── test_batch_tasks.py # Batch task runner tests
-├── test_modals.py      # Modal component tests
-├── test_snapshots.py   # Visual regression tests
-└── __snapshots__/      # SVG screenshot baselines
+gh-repo-dashboard/
+├── main.go                    # CLI entry point
+├── go.mod / go.sum           # Dependencies
+├── internal/
+│   ├── app/                  # Bubble Tea app
+│   │   ├── app.go           # Model definition, Init
+│   │   ├── update.go        # Update function (message handling)
+│   │   ├── view.go          # View rendering
+│   │   ├── keymap.go        # Key bindings
+│   │   ├── commands.go      # Tea commands
+│   │   └── messages.go      # Message types
+│   ├── models/               # Data structures
+│   │   ├── repo.go          # RepoSummary, WorktreeInfo
+│   │   ├── branch.go        # BranchInfo
+│   │   ├── pr.go            # PRInfo, PRDetail, WorkflowSummary
+│   │   ├── filter.go        # ActiveFilter, ActiveSort
+│   │   └── enums.go         # FilterMode, SortMode, etc.
+│   ├── vcs/                  # VCS abstraction
+│   │   ├── operations.go    # VCSOperations interface
+│   │   ├── git.go           # Git implementation
+│   │   ├── jj.go            # JJ implementation
+│   │   ├── factory.go       # Detection and factory
+│   │   └── mock.go          # Test mock
+│   ├── filters/              # Filter/sort logic
+│   │   ├── filter.go        # FilterRepos, FilterReposMulti
+│   │   ├── sort.go          # SortPaths, SortPathsMulti
+│   │   └── search.go        # Fuzzy search
+│   ├── discovery/            # Repo discovery
+│   │   └── discovery.go     # DiscoverRepos
+│   ├── batch/                # Batch operations
+│   │   ├── runner.go        # Task runner
+│   │   └── tasks.go         # Task definitions
+│   ├── github/               # GitHub integration
+│   │   ├── pr.go            # PR operations
+│   │   └── workflow.go      # Workflow runs
+│   ├── cache/                # Caching
+│   │   └── ttl.go           # Generic TTL cache
+│   └── ui/styles/            # Styling
+│       └── styles.go        # Lipgloss styles
+└── test-improvements.md      # Testing patterns documentation
 ```
 
 ## Development Environment
 
 ### Prerequisites
 
-- Python >=3.11
-- uv (Python package manager)
+- Go 1.23+
 - git CLI (if managing git repos)
 - jj CLI (if managing jj repos)
 - gh (GitHub CLI, optional for PR features with both git and jj)
@@ -56,14 +65,15 @@ tests/
 ### Setup
 
 ```bash
-# Install dependencies
-uv sync
+cd gh-repo-dashboard
 
-# Run the app
-uv run reda
+# Build and run
+go build -o gh-repo-dashboard .
+./gh-repo-dashboard ~/Developer --depth 2
 
-# Run with arguments
-uv run reda ~/Developer --depth 2 --theme dark
+# Or as a GitHub CLI extension
+gh extension install .
+gh repo-dashboard ~/Developer
 ```
 
 ## Testing
@@ -71,71 +81,63 @@ uv run reda ~/Developer --depth 2 --theme dark
 ### Unit Tests
 
 ```bash
+cd gh-repo-dashboard
+
 # Run all tests
-uv run pytest
+go test ./...
 
 # Run with verbose output
-uv run pytest -v
+go test -v ./...
 
-# Run specific test file
-uv run pytest tests/test_filters.py
+# Run specific package tests
+go test -v ./internal/filters/...
 
 # Run specific test
-uv run pytest tests/test_filters.py::test_filter_repos_with_search_text
+go test -v -run TestFilterRepos ./internal/filters/
 
 # Run with coverage
-uv run pytest --cov=repo_dashboard --cov-report=html
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
 
-# Stop on first failure
-uv run pytest -x
+# Run with race detector
+go test -race ./...
 ```
 
-### Visual Snapshot Tests
+### Visual Testing
 
-Uses pytest-textual-snapshot for visual regression testing.
+See `test-improvements.md` for comprehensive testing patterns including:
+
+1. **teatest (Golden File Testing)** - Visual regression with snapshot comparison
+2. **catwalk (Data-Driven Testing)** - Complex interaction sequence testing
+3. **Direct Testing** - State transition and business logic testing
 
 ```bash
-# Run snapshot tests
-uv run pytest tests/test_snapshots.py
+# Run golden file tests (if using build tag)
+go test -tags=golden ./...
 
-# Update snapshots after UI changes
-uv run pytest tests/test_snapshots.py --snapshot-update
-
-# View snapshots
-ls tests/__snapshots__/
+# Update golden files
+go test -tags=golden -update ./...
 ```
-
-**When to update snapshots:**
-- After intentional UI changes (new widgets, layout changes, styling)
-- After updating Textual version
-- When snapshot tests fail due to expected changes
-
-**Workflow:**
-1. Make UI changes
-2. Run `uv run pytest tests/test_snapshots.py` - tests will fail
-3. Review the diff in `snapshot_report.html`
-4. If changes are correct: `uv run pytest tests/test_snapshots.py --snapshot-update`
-5. Commit updated snapshots: `git add tests/__snapshots__/`
 
 ## VCS Support
 
-The dashboard uses a protocol-based abstraction to support multiple version control systems.
+The dashboard uses an interface-based abstraction to support multiple version control systems.
 
 ### Architecture
 
-**VCS Protocol Pattern:**
-- `VCSOperations` protocol defines the interface for both read and write operations
-- `GitOperations` and `JJOperations` implement the protocol
-- `detect_vcs_type()` auto-detects VCS by directory presence (`.git` or `.jj`)
-- `get_vcs_operations()` factory returns the appropriate implementation
+**VCS Interface Pattern:**
+- `VCSOperations` interface defines the contract for both read and write operations
+- `GitOperations` and `JJOperations` implement the interface
+- `DetectVCSType()` auto-detects VCS by directory presence (`.git` or `.jj`)
+- `GetVCSOperations()` factory returns the appropriate implementation
 - Colocated repos (both `.git` and `.jj`) prefer jj
 
 **Key Files:**
-- `vcs_protocol.py` - Protocol defining VCS operations interface
-- `vcs_git.py` - Git implementation with full protocol support
-- `vcs_jj.py` - Jujutsu implementation with full protocol support
-- `vcs_factory.py` - VCS detection and factory function
-- `batch_tasks.py` - Batch operations using VCS abstraction
+- `vcs/operations.go` - Interface defining VCS operations
+- `vcs/git.go` - Git implementation with full interface support
+- `vcs/jj.go` - Jujutsu implementation with full interface support
+- `vcs/factory.go` - VCS detection and factory function
+- `batch/tasks.go` - Batch operations using VCS abstraction
 
 ### Git vs JJ Concept Mapping
 
@@ -152,26 +154,29 @@ The dashboard uses a protocol-based abstraction to support multiple version cont
 
 ### VCS Operations
 
-**Read Operations (existing):**
-- `get_repo_summary_async()` - Get repository status and metadata
-- `get_current_branch_async()` - Get current branch/bookmark name
-- `get_branch_list_async()` - List all branches/bookmarks
-- `get_stash_list()` - List stashes (git only, jj returns empty)
-- `get_worktree_list()` - List worktrees/workspaces
-- `get_commit_log()` - Get commit/change history
+**Read Operations:**
+- `GetRepoSummary()` - Get repository status and metadata
+- `GetCurrentBranch()` - Get current branch/bookmark name
+- `GetBranchList()` - List all branches/bookmarks
+- `GetStashList()` - List stashes (git only, jj returns empty)
+- `GetWorktreeList()` - List worktrees/workspaces
+- `GetCommitLog()` - Get commit/change history
+- `GetAheadBehind()` - Get commits ahead/behind tracking branch
+- `GetStagedCount()` / `GetUnstagedCount()` / `GetUntrackedCount()` - File status counts
+- `GetConflictedCount()` - Count of conflicted files
 
 **Write Operations (batch tasks):**
-- `fetch_all()` - Fetch from all remotes
+- `FetchAll()` - Fetch from all remotes
   - Git: `git fetch --all --prune`
   - JJ: `jj git fetch --all-remotes`
-- `prune_remote()` - Prune stale remote branches
+- `PruneRemote()` - Prune stale remote branches
   - Git: `git remote prune origin`
   - JJ: No-op (jj handles this automatically)
-- `cleanup_merged_branches()` - Delete merged local branches/bookmarks
+- `CleanupMergedBranches()` - Delete merged local branches/bookmarks
   - Git: Deletes local branches merged into main
   - JJ: Deletes bookmarks that are ancestors of main
 
-All write operations return `(success: bool, message: str)` for UI feedback.
+All write operations return `(success bool, message string)` for UI feedback.
 
 ### GitHub CLI Integration
 
@@ -181,7 +186,7 @@ GitHub integration works for both git and jj repositories via the `gh` CLI:
 - For jj repos (non-colocated): Sets `GIT_DIR` environment variable to `.jj/repo/store/git`
 - For jj repos (colocated): Uses `.git` directory like standard git repos
 
-The `get_github_env()` helper in `vcs_factory.py` handles this transparently.
+The `GetGitHubEnv()` helper in `vcs/factory.go` handles this transparently.
 
 ## Batch Tasks
 
@@ -190,83 +195,61 @@ Batch operations execute maintenance tasks across multiple repositories simultan
 ### Architecture
 
 **BatchTaskRunner:**
-- Runs async tasks sequentially across filtered repositories
+- Runs tasks sequentially across filtered repositories
 - Uses VCS factory to get appropriate operations for each repo
-- Tracks progress and duration for each operation
+- Tracks progress for each operation
 - Handles errors gracefully (continues on failure)
-
-**BatchTaskModal:**
-- Real-time progress bar showing completion
-- Results table with columns: Repository, Status, Message, Time
-- Color-coded status icons (✓ green for success, ✗ red for failure)
-- Scrollable results for large repository sets
+- Sends progress messages via Tea commands
 
 ### Adding a New Batch Task
 
-1. Add async method to `VCSOperations` protocol (vcs_protocol.py)
-   ```python
-   async def new_operation(self, repo_path: Path) -> tuple[bool, str]:
-       """Description of operation"""
-       ...
+1. Add method to `VCSOperations` interface (`vcs/operations.go`)
+   ```go
+   type VCSOperations interface {
+       // ... existing methods
+       NewOperation(ctx context.Context, repoPath string) (bool, string)
+   }
    ```
 
 2. Implement in both `GitOperations` and `JJOperations`
-   ```python
-   # vcs_git.py
-   async def new_operation(self, repo_path: Path) -> tuple[bool, str]:
-       # Git-specific implementation
-       ...
+   ```go
+   // vcs/git.go
+   func (g *GitOperations) NewOperation(ctx context.Context, repoPath string) (bool, string) {
+       // Git-specific implementation
+       return true, "Success message"
+   }
 
-   # vcs_jj.py
-   async def new_operation(self, repo_path: Path) -> tuple[bool, str]:
-       # JJ-specific implementation
-       ...
+   // vcs/jj.go
+   func (j *JJOperations) NewOperation(ctx context.Context, repoPath string) (bool, string) {
+       // JJ-specific implementation
+       return true, "Success message"
+   }
    ```
 
-3. Create task function in `batch_tasks.py`
-   ```python
-   async def task_new_operation(
-       vcs_ops: VCSOperations, repo_path: Path
-   ) -> tuple[bool, str]:
-       return await vcs_ops.new_operation(repo_path)
+3. Create task function in `batch/tasks.go`
+   ```go
+   func TaskNewOperation(vcsOps vcs.VCSOperations, repoPath string) (bool, string) {
+       return vcsOps.NewOperation(context.Background(), repoPath)
+   }
    ```
 
-4. Add action method to `app.py`
-   ```python
-   def action_batch_new_operation(self) -> None:
-       from repo_dashboard.batch_tasks import task_new_operation
-       from repo_dashboard.filters import filter_repos_multi
-
-       if self._current_view != "repo_list":
-           self.notify("Batch tasks only available in repo list view", severity="warning")
-           return
-
-       filtered = filter_repos_multi(self._summaries, self._active_filters, self._search_text)
-       filtered_repos = list(filtered.values())
-       if not filtered_repos:
-           self.notify("No repositories for operation", severity="warning")
-           return
-
-       self.push_screen(
-           BatchTaskModal("Operation Name", task_new_operation, filtered_repos)
-       )
+4. Add handler in `app/update.go`
+   ```go
+   case "N":
+       if m.viewMode == ViewModeRepoList {
+           return m, m.startBatchTask("New Operation", batch.TaskNewOperation)
+       }
    ```
 
-5. Add keybinding to BINDINGS list
-   ```python
-   Binding("N", "batch_new_operation", "New Operation", show=False)
+5. Add keybinding to `app/keymap.go`
+   ```go
+   key.NewBinding(
+       key.WithKeys("N"),
+       key.WithHelp("N", "new operation"),
+   ),
    ```
 
-6. Update help modal text in `modals.py`
-   ```python
-   [bold]Batch Tasks[/]
-   F             Fetch all (filtered repos)
-   P             Prune remote (filtered repos)
-   C             Cleanup merged branches (filtered repos)
-   N             New operation (filtered repos)
-   ```
-
-7. Add tests to `tests/test_batch_tasks.py`
+6. Add tests to `internal/batch/batch_test.go`
 
 ### Safety Considerations
 
@@ -278,7 +261,6 @@ Batch operations execute maintenance tasks across multiple repositories simultan
 - Only operate on currently filtered repos (explicit scope)
 - Progress feedback shows results incrementally
 - Failures highlighted but don't stop batch execution
-- Modal display provides confirmation before operations begin
 
 **JJ-Specific Considerations:**
 - Non-colocated repos require GIT_DIR for gh CLI (handled automatically)
@@ -288,90 +270,105 @@ Batch operations execute maintenance tasks across multiple repositories simultan
 
 ## Code Style
 
-### Python Conventions
-
-**Modern Python features:**
-- Use `pathlib.Path` instead of string paths
-- Use `dataclass(frozen=True)` for immutable data
-- Use `StrEnum` for string enumerations
-- Use walrus operator: `if (match := re.search(...)):`
-- Use pattern matching where appropriate
-- Use `defaultdict`, `Literal[...]` from typing
+### Go Conventions
 
 **Structure:**
-- Prefix private functions with underscore: `_filter_dirty()`
-- Place imports at top of file (no lazy imports)
-- Only use `__all__` in `__init__.py`
-- Favor composition over inheritance
+- Use lowercase unexported functions for internal helpers
+- Place related code in the same package
+- Use interfaces for abstraction
 - Write small, composable functions with single responsibility
 
 **Error handling:**
-- Let exceptions propagate unless you can handle meaningfully
-- Use specific exception types
-- Use `except Exception as err:` (not `as e:`)
+- Return errors explicitly
+- Wrap errors with context: `fmt.Errorf("operation failed: %w", err)`
+- Use `context.Context` for cancellation and timeouts
 - Validate at system boundaries, trust internal code
 
+**Naming:**
+- Use MixedCaps (PascalCase for exported, camelCase for unexported)
+- Acronyms should be all caps: `GetPRInfo`, `HTTPClient`
+- Interface names should describe behavior: `VCSOperations`, `Fetcher`
+
 **Comments:**
-- NEVER add inline comments explaining what code does
-- NEVER add docstrings to private functions when self-explanatory
-- Only add docstrings with args/returns/raises for public functions
-- Do not repeat type info in docstrings
+- Add package comments in a single file per package
+- Add doc comments for exported functions/types
+- Do not add comments explaining what code does (code should be self-explanatory)
 
-**Strings:**
-- Use `textwrap.dedent()` for multiline strings
-- Trailing backslash for first line: `dedent("""\`
-- No `.strip()` needed with dedent
+### Bubble Tea Patterns
 
-### Textual-Specific Patterns
+**Model structure:**
+```go
+type Model struct {
+    // State
+    viewMode    ViewMode
+    loading     bool
+    cursor      int
 
-**Widget composition:**
-```python
-def compose(self) -> ComposeResult:
-    yield Breadcrumbs([])
-    yield Static("", id="filter-sort-status")
-    yield Input(placeholder="...", id="search-input")
-    with Vertical(id="main-layout"):
-        yield DataTable(id="main-table")
-    yield Footer()
+    // Data
+    repoPaths     []string
+    filteredPaths []string
+    summaries     map[string]models.RepoSummary
+
+    // UI components
+    width  int
+    height int
+}
 ```
 
-**Event handlers:**
-```python
-@on(DataTable.RowSelected)
-def on_row_selected(self, event: DataTable.RowSelected) -> None:
-    """Handle row selection"""
-    row_key = str(event.row_key.value)
-    # ...
+**Update function:**
+```go
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.KeyMsg:
+        switch msg.String() {
+        case "q":
+            return m, tea.Quit
+        case "j", "down":
+            m.cursor++
+        }
+    case RepoSummaryLoadedMsg:
+        m.summaries[msg.Path] = msg.Summary
+    }
+    return m, nil
+}
 ```
 
-**Actions:**
-```python
-def action_refresh(self) -> None:
-    """Refresh all data"""
-    # Action method must start with action_
+**Commands:**
+```go
+func loadRepoSummary(path string) tea.Cmd {
+    return func() tea.Msg {
+        summary, err := vcs.GetRepoSummary(context.Background(), path)
+        if err != nil {
+            return RepoSummaryErrorMsg{Path: path, Err: err}
+        }
+        return RepoSummaryLoadedMsg{Path: path, Summary: summary}
+    }
+}
 ```
 
-**Bindings:**
-```python
-BINDINGS = [
-    Binding("r", "refresh", "Refresh"),
-    Binding("/", "search", "Search", show=False),
-]
-```
+**View rendering with Lipgloss:**
+```go
+func (m Model) View() string {
+    var b strings.Builder
 
-**Widget queries:**
-```python
-table = self.query_one(DataTable)
-search_input = self.query_one("#search-input", Input)
-```
+    // Header
+    header := lipgloss.NewStyle().
+        Bold(true).
+        Foreground(lipgloss.Color("#8aadf4")).
+        Render("Repository Dashboard")
+    b.WriteString(header + "\n")
 
-**Workers for async:**
-```python
-self.run_worker(
-    self._load_repo_summary(path),
-    group="summaries",
-    exclusive=False,
-)
+    // Content
+    for i, path := range m.filteredPaths {
+        style := lipgloss.NewStyle()
+        if i == m.cursor {
+            style = style.Background(lipgloss.Color("#363a4f"))
+        }
+        b.WriteString(style.Render(path) + "\n")
+    }
+
+    return b.String()
+}
 ```
 
 ## Design Principles
@@ -400,12 +397,12 @@ self.run_worker(
 
 **Compositional filtering:**
 ```
-FilterMode → SearchText → SortMode → Display
+FilterMode -> SearchText -> SortMode -> Display
 ```
 
 Example: "DIRTY" filter + "api" search = dirty repos containing "api"
 
-**Filter modes (cycle with `f`):**
+**Filter modes:**
 - ALL - Show all repositories
 - DIRTY - Uncommitted changes or unpushed commits
 - AHEAD - Commits ahead of tracking branch
@@ -413,15 +410,19 @@ Example: "DIRTY" filter + "api" search = dirty repos containing "api"
 - HAS_PR - Has associated GitHub PR
 - HAS_STASH - Has stashed changes
 
-**Sort modes (cycle with `s`):**
+**Sort modes:**
 - NAME - Alphabetical by repo name
 - MODIFIED - Most recently modified first
 - STATUS - Dirty repos first, then by uncommitted count
 - BRANCH - By branch name, then repo name
 
-**Search (activate with `/`):**
-- Fuzzy matching with 0.6 similarity threshold
-- Case-insensitive substring matching
+**Multi-sort support:**
+- Go implementation supports multi-field sorting with priority
+- Each sort can have ASC/DESC direction
+
+**Search:**
+- Fuzzy matching using sahilm/fuzzy library
+- Case-insensitive
 - Applied after filter mode, before sort
 - Real-time updates as you type
 
@@ -430,66 +431,65 @@ Example: "DIRTY" filter + "api" search = dirty repos containing "api"
 ### Progressive Loading
 
 - Repo list appears immediately with placeholder data
-- Workers load `RepoSummary` for each repo asynchronously
-- Table updates incrementally as data becomes available
+- Goroutines load `RepoSummary` for each repo concurrently
+- Table updates incrementally as data becomes available via Tea messages
 - No blocking on slow git operations
 
 ### Caching Strategy
 
-Three caches with TTL:
-- `pr_cache` - GitHub PR information (key: `{upstream}:{branch}`)
-- `branch_cache` - Branch lists
-- `commit_cache` - Commit information
+Generic TTL cache with mutex protection:
+- `prCache` - GitHub PR information
+- `branchCache` - Branch lists
+- `summaryCache` - Repository summaries
 
-Refresh with `r` clears all caches.
+Refresh clears all caches.
 
 ### View Hierarchy
 
-**View 1: Repo List** (initial)
+**ViewModeRepoList** (initial)
 - Shows all discovered repositories
 - Columns: Name, Branch, Status, PR, Modified
-- Breadcrumb shows: repos count, dirty count, PRs count
 
-**View 2: Repository Details** (drill-down with Space/Enter)
-- Shows branches, stashes, worktrees
-- Right panel displays details for selected item
-- Loads branch PR info progressively
+**ViewModeRepoDetail** (drill-down with Enter)
+- Shows branches, stashes, worktrees, PRs
+- Tab switching between detail views
 
-**View 3: Branch Details** (context panel)
-- Shows commits ahead/behind
-- PR information if exists
-- Modified/staged/untracked files
+**ViewModeFilter** (f key)
+- Filter selection modal
+- Multi-filter with AND logic
+
+**ViewModeSort** (s key)
+- Sort selection modal
+- Multi-sort with priority
+
+**ViewModeHelp** (? key)
+- Complete keybinding reference
+
+**ViewModeBatchProgress**
+- Progress bar and results during batch operations
 
 ## Common Tasks
 
 ### Adding a new filter mode
 
-1. Add enum value to `FilterMode` in `models.py`
-2. Add filter function in `filters.py` (e.g., `_filter_xyz()`)
-3. Add case to `filter_repos()` in `filters.py`
-4. Add tests in `tests/test_filters.py`
+1. Add const to `FilterMode` in `models/enums.go`
+2. Add filter function in `filters/filter.go`
+3. Add case to `FilterRepos()` in `filters/filter.go`
+4. Add tests in `filters/filter_test.go`
 
 ### Adding a new keybinding
 
-1. Add `Binding` to `BINDINGS` list in `app.py`
-2. Implement `action_<name>()` method
-3. Update help text in `modals.py`
-4. Add test in `tests/test_app.py`
+1. Add key binding to `keymap.go`
+2. Add case to `handleKey()` in `update.go`
+3. Update help text in `view.go`
+4. Add test in `app_test.go`
 
-### Adding a new modal/screen
+### Adding a new view mode
 
-1. Create modal class inheriting `ModalScreen` in `modals.py`
-2. Define `compose()` method with widgets
-3. Add CSS styling to `app.tcss`
-4. Use `self.push_screen(YourModal())` to show
-
-### Modifying UI layout
-
-1. Make changes to `compose()`, CSS, or widget code
-2. Run `uv run pytest tests/test_snapshots.py` - will fail
-3. Review visual diff in `snapshot_report.html`
-4. If correct: `uv run pytest tests/test_snapshots.py --snapshot-update`
-5. Commit updated snapshots
+1. Add const to `ViewMode` in `app/app.go`
+2. Add view rendering in `view.go`
+3. Add update handling in `update.go`
+4. Add navigation logic (enter/exit)
 
 ## External Dependencies
 
@@ -512,59 +512,50 @@ Refresh with `r` clears all caches.
   - Used for: fetching PR info, check status, PR details
   - Works with both git and jj repositories
   - For non-colocated jj repos: automatically sets GIT_DIR
-  - If missing: PR columns show "—" instead of failing
+  - If missing: PR columns show dash instead of failing
   - Install: `brew install gh` (macOS) or see https://cli.github.com/
 
 ## Debugging
 
-### Textual DevTools
+### Bubble Tea Debugging
 
 ```bash
-# Run with devtools console
-uv run textual console
+# Run with debug logging
+DEBUG=1 ./gh-repo-dashboard ~/Developer
 
-# In another terminal, run the app
-uv run reda
-```
-
-### Logging
-
-Textual provides built-in logging:
-```python
-self.log("Debug message")  # Shows in devtools console
-self.notify("User message")  # Shows as notification in app
+# Log to file
+./gh-repo-dashboard ~/Developer 2>debug.log
 ```
 
 ### Common Issues
 
-**Focus issues:**
-- Hidden widgets should be `disabled=True` to remove from focus chain
-- Use `widget.focus()` to explicitly set focus
+**Terminal size issues:**
+- Model receives `tea.WindowSizeMsg` on startup and resize
+- Ensure `m.width` and `m.height` are updated
 
-**Table updates:**
-- Clear and rebuild table when filters/sort change
-- Use `table.update_cell()` for single cell updates
-- Use `table.refresh()` when data structure changes
+**Message ordering:**
+- Commands execute asynchronously
+- Don't assume message arrival order
+- Use state flags to track loading/completion
 
-**Worker race conditions:**
-- Use worker groups for related tasks
-- Use `exclusive=True` to cancel previous workers
-- Handle worker cancellation gracefully
+**Goroutine leaks:**
+- Use `context.Context` for cancellation
+- Cancel contexts when leaving views or quitting
 
 ## Performance Considerations
 
-- Fuzzy search runs on every keystroke (acceptable for <1000 repos)
+- Fuzzy search uses sahilm/fuzzy for efficient matching
 - Progressive loading prevents blocking on initial scan
-- TTL caching reduces redundant git/GitHub operations
-- Workers run concurrently for parallel data loading
-- Table virtualization (Textual handles this) for large lists
+- TTL caching with mutex protection for thread safety
+- Goroutines with Tea commands for parallel data loading
+- Lipgloss style caching (reuse style objects)
 
 ## Release Checklist
 
-1. Run full test suite: `uv run pytest -v`
-2. Verify snapshots are current
+1. Run full test suite: `go test ./...`
+2. Run with race detector: `go test -race ./...`
 3. Test manually with real repositories (both git and jj if available)
 4. Test batch operations (fetch, prune, cleanup)
-5. Update version in `pyproject.toml`
+5. Update version in `main.go`
 6. Update `README.md` if features changed
-7. Run with both light and dark themes
+7. Build for release: `go build -o gh-repo-dashboard .`

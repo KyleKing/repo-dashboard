@@ -423,7 +423,7 @@ func (m Model) renderHelp() string {
 		{
 			"General",
 			[]struct{ key, desc string }{
-				{"r", "Refresh all data"},
+				{"r/ctrl+r", "Refresh all data (clears cache)"},
 				{"?", "Toggle help"},
 				{"q, ctrl+c", "Quit"},
 			},
@@ -1358,10 +1358,38 @@ func (m Model) renderPRDetail() string {
 	home := styles.SubtitleStyle.Render("Repos")
 	sep := styles.SubtitleStyle.Render(" > ")
 	repo := styles.BranchStyle.Render(summary.Name())
-	prTitle := styles.TitleStyle.Render(fmt.Sprintf("PR #%d", m.prDetail.Number))
 
+	// Check if PR detail has been loaded
+	if m.prDetail.Number == 0 {
+		// Show loading state (shouldn't happen with progressive loading)
+		b.WriteString(home + sep + repo + sep + styles.SubtitleStyle.Render("PR Detail"))
+		b.WriteString("\n\n")
+		loadingStyle := lipgloss.NewStyle().
+			Foreground(styles.Blue).
+			Padding(2)
+		b.WriteString(loadingStyle.Render("Loading PR details..."))
+		b.WriteString("\n\n")
+
+		footer := styles.FooterKeyStyle.Render("esc") + styles.FooterDescStyle.Render(" back  ") +
+			styles.FooterKeyStyle.Render("?") + styles.FooterDescStyle.Render(" help")
+		b.WriteString(styles.FooterStyle.Render(footer))
+		return b.String()
+	}
+
+	prTitle := styles.TitleStyle.Render(fmt.Sprintf("PR #%d", m.prDetail.Number))
 	b.WriteString(home + sep + repo + sep + prTitle)
 	b.WriteString("\n\n")
+
+	// Show loading indicator for additional details if not yet loaded
+	isFullyLoaded := m.prDetail.Author != ""
+	if !isFullyLoaded {
+		loadingIndicator := lipgloss.NewStyle().
+			Foreground(styles.Subtext0).
+			Italic(true).
+			Render(" (loading details...)")
+		b.WriteString(loadingIndicator)
+		b.WriteString("\n")
+	}
 
 	sectionStyle := lipgloss.NewStyle().
 		Foreground(styles.Blue).
@@ -1383,8 +1411,25 @@ func (m Model) renderPRDetail() string {
 	b.WriteString(valueStyle.Render(labelStyle.Render("Title:") + " " + m.prDetail.Title))
 	b.WriteString("\n")
 
-	b.WriteString(valueStyle.Render(labelStyle.Render("Author:") + " " + m.prDetail.Author))
-	b.WriteString("\n")
+	// Author might not be loaded yet (progressive loading)
+	if m.prDetail.Author != "" {
+		b.WriteString(valueStyle.Render(labelStyle.Render("Author:") + " " + m.prDetail.Author))
+		b.WriteString("\n")
+	}
+
+	if len(m.prDetail.Assignees) > 0 {
+		b.WriteString(valueStyle.Render(
+			labelStyle.Render("Assignees:") + " " + strings.Join(m.prDetail.Assignees, ", "),
+		))
+		b.WriteString("\n")
+	}
+
+	if len(m.prDetail.Reviewers) > 0 {
+		b.WriteString(valueStyle.Render(
+			labelStyle.Render("Reviewers:") + " " + strings.Join(m.prDetail.Reviewers, ", "),
+		))
+		b.WriteString("\n")
+	}
 
 	b.WriteString(valueStyle.Render(
 		labelStyle.Render("Branch:") + " " +
@@ -1420,32 +1465,35 @@ func (m Model) renderPRDetail() string {
 	))
 	b.WriteString("\n")
 
-	b.WriteString(valueStyle.Render(
-		labelStyle.Render("Changes:") + " " +
-			styles.CleanStyle.Render(fmt.Sprintf("+%d", m.prDetail.Additions)) + " " +
-			styles.ErrorStyle.Render(fmt.Sprintf("-%d", m.prDetail.Deletions)),
-	))
-	b.WriteString("\n")
-
-	if m.prDetail.Comments > 0 {
+	// Only show detailed stats if fully loaded
+	if m.prDetail.Author != "" {
 		b.WriteString(valueStyle.Render(
-			labelStyle.Render("Comments:") + " " + fmt.Sprintf("%d", m.prDetail.Comments),
+			labelStyle.Render("Changes:") + " " +
+				styles.CleanStyle.Render(fmt.Sprintf("+%d", m.prDetail.Additions)) + " " +
+				styles.ErrorStyle.Render(fmt.Sprintf("-%d", m.prDetail.Deletions)),
 		))
 		b.WriteString("\n")
-	}
 
-	if !m.prDetail.CreatedAt.IsZero() {
-		b.WriteString(valueStyle.Render(
-			labelStyle.Render("Created:") + " " + m.prDetail.RelativeCreated(),
-		))
-		b.WriteString("\n")
-	}
+		if m.prDetail.Comments > 0 {
+			b.WriteString(valueStyle.Render(
+				labelStyle.Render("Comments:") + " " + fmt.Sprintf("%d", m.prDetail.Comments),
+			))
+			b.WriteString("\n")
+		}
 
-	if !m.prDetail.UpdatedAt.IsZero() {
-		b.WriteString(valueStyle.Render(
-			labelStyle.Render("Updated:") + " " + m.prDetail.RelativeUpdated(),
-		))
-		b.WriteString("\n")
+		if !m.prDetail.CreatedAt.IsZero() {
+			b.WriteString(valueStyle.Render(
+				labelStyle.Render("Created:") + " " + m.prDetail.RelativeCreated(),
+			))
+			b.WriteString("\n")
+		}
+
+		if !m.prDetail.UpdatedAt.IsZero() {
+			b.WriteString(valueStyle.Render(
+				labelStyle.Render("Updated:") + " " + m.prDetail.RelativeUpdated(),
+			))
+			b.WriteString("\n")
+		}
 	}
 
 	if m.prDetail.Body != "" {
@@ -1468,15 +1516,31 @@ func (m Model) renderPRDetail() string {
 	actionPadding := lipgloss.NewStyle().PaddingLeft(2)
 	actions := []string{
 		styles.FooterKeyStyle.Render("o") + styles.FooterDescStyle.Render(" open in browser"),
-		styles.FooterKeyStyle.Render("y") + styles.FooterDescStyle.Render(" copy URL"),
+		styles.FooterKeyStyle.Render("u") + styles.FooterDescStyle.Render(" copy URL"),
+		styles.FooterKeyStyle.Render("n") + styles.FooterDescStyle.Render(" copy PR number"),
+		styles.FooterKeyStyle.Render("b") + styles.FooterDescStyle.Render(" copy branch name"),
 	}
 	b.WriteString(actionPadding.Render(strings.Join(actions, "    ")))
 	b.WriteString("\n")
 
 	contentLines := strings.Count(b.String(), "\n")
-	paddingNeeded := m.height - contentLines - 2
+	statusLines := 0
+	if m.statusMessage != "" {
+		statusLines = 1
+	}
+	paddingNeeded := m.height - contentLines - statusLines - 2
 	if paddingNeeded > 0 {
 		b.WriteString(strings.Repeat("\n", paddingNeeded))
+	}
+
+	if m.statusMessage != "" {
+		statusStyle := lipgloss.NewStyle().
+			Foreground(styles.Green).
+			Background(styles.Surface0).
+			Padding(0, 1)
+		b.WriteString("\n")
+		b.WriteString(statusStyle.Render(m.statusMessage))
+		b.WriteString("\n")
 	}
 
 	footer := styles.FooterKeyStyle.Render("esc") + styles.FooterDescStyle.Render(" back  ") +

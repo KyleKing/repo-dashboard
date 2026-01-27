@@ -77,6 +77,8 @@ type PRDetail struct {
 	PRInfo
 	Body       string
 	Author     string
+	Assignees  []string
+	Reviewers  []string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	Additions  int

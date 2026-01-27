@@ -2,10 +2,15 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"os/exec"
+	"runtime"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kyleking/gh-repo-dashboard/internal/batch"
+	"github.com/kyleking/gh-repo-dashboard/internal/cache"
 	"github.com/kyleking/gh-repo-dashboard/internal/discovery"
 	"github.com/kyleking/gh-repo-dashboard/internal/filters"
 	"github.com/kyleking/gh-repo-dashboard/internal/github"
@@ -103,6 +108,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stashes = msg.Stashes
 			m.worktrees = msg.Worktrees
 			m.prs = msg.PRs
+
+			// Prefetch first few PR details in background
+			var cmds []tea.Cmd
+			prefetchCount := 3 // Prefetch first 3 PRs
+			if len(msg.PRs) < prefetchCount {
+				prefetchCount = len(msg.PRs)
+			}
+			for i := 0; i < prefetchCount; i++ {
+				cmds = append(cmds, prefetchPRDetailCmd(msg.Path, msg.PRs[i].Number))
+			}
+			if len(cmds) > 0 {
+				return m, tea.Batch(cmds...)
+			}
 		}
 		return m, nil
 
@@ -120,6 +138,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PRDetailLoadedMsg:
 		if msg.Path == m.selectedRepo && msg.PRNumber == m.selectedPR.Number {
+			if msg.Error != nil {
+				// Don't clear basic info on error - preserve what we already have
+				// Show error status message
+				m.statusMessage = fmt.Sprintf("Failed to load PR details: %v", msg.Error)
+				return m, clearStatusAfterDelay()
+			}
 			m.prDetail = msg.Detail
 		}
 		return m, nil
@@ -138,7 +162,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case CopySuccessMsg:
+		m.statusMessage = fmt.Sprintf("Copied to clipboard: %s", msg.Text)
+		return m, clearStatusAfterDelay()
+
+	case URLOpenedMsg:
+		m.statusMessage = fmt.Sprintf("Opened in browser: %s", msg.URL)
+		return m, clearStatusAfterDelay()
+
+	case StatusMsg:
+		m.statusMessage = msg.Message
 		return m, nil
+
+	case ClearStatusMsg:
+		m.statusMessage = ""
+		return m, nil
+
+	case RefreshCompleteMsg:
+		m.statusMessage = "Data refreshed"
+		return m, clearStatusAfterDelay()
 
 	case batch.TaskProgressMsg:
 		m.batchResults = append(m.batchResults, BatchResult{
@@ -229,9 +270,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keys.Refresh):
-		m.loading = true
-		m.summaries = make(map[string]models.RepoSummary)
-		return m, discoverReposCmd(m.scanPaths, m.maxDepth)
+		return m.handleRefresh()
 
 	case key.Matches(msg, m.keys.Filter):
 		m.viewMode = ViewModeFilter
@@ -270,9 +309,17 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewMode = ViewModeRepoList
 		return m, nil
 
+	case key.Matches(msg, m.keys.Refresh):
+		return m.handleRefresh()
+
 	case key.Matches(msg, m.keys.Tab), key.Matches(msg, m.keys.Right):
 		m.detailTab = DetailTab((int(m.detailTab) + 1) % 4)
 		m.detailCursor = 0
+
+		// Prefetch first PR when switching to PR tab
+		if m.detailTab == DetailTabPRs && len(m.prs) > 0 {
+			return m, prefetchPRDetailCmd(m.selectedRepo, m.prs[0].Number)
+		}
 		return m, nil
 
 	case key.Matches(msg, m.keys.Left):
@@ -282,11 +329,21 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.detailTab = DetailTab(newTab)
 		m.detailCursor = 0
+
+		// Prefetch first PR when switching to PR tab
+		if m.detailTab == DetailTabPRs && len(m.prs) > 0 {
+			return m, prefetchPRDetailCmd(m.selectedRepo, m.prs[0].Number)
+		}
 		return m, nil
 
 	case key.Matches(msg, m.keys.Up):
 		if m.detailCursor > 0 {
 			m.detailCursor--
+			// Prefetch PR detail for newly selected item
+			if m.detailTab == DetailTabPRs && m.detailCursor < len(m.prs) {
+				pr := m.prs[m.detailCursor]
+				return m, prefetchPRDetailCmd(m.selectedRepo, pr.Number)
+			}
 		}
 		return m, nil
 
@@ -294,6 +351,11 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		maxIdx := m.detailListLen() - 1
 		if m.detailCursor < maxIdx {
 			m.detailCursor++
+			// Prefetch PR detail for newly selected item
+			if m.detailTab == DetailTabPRs && m.detailCursor < len(m.prs) {
+				pr := m.prs[m.detailCursor]
+				return m, prefetchPRDetailCmd(m.selectedRepo, pr.Number)
+			}
 		}
 		return m, nil
 
@@ -311,10 +373,16 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Enter):
 		if m.detailTab == DetailTabBranches && m.detailCursor < len(m.branches) {
 			m.selectedBranch = m.branches[m.detailCursor]
+			m.branchDetail = models.BranchDetail{} // Clear previous detail
 			m.viewMode = ViewModeBranchDetail
 			return m, loadBranchDetailCmd(m.selectedRepo, m.selectedBranch.Name)
 		} else if m.detailTab == DetailTabPRs && m.detailCursor < len(m.prs) {
 			m.selectedPR = m.prs[m.detailCursor]
+			// Progressive loading: Show basic info from list immediately
+			m.prDetail = models.PRDetail{
+				PRInfo: m.selectedPR, // Use data already loaded from list
+				// Full details (author, assignees, etc.) will load async
+			}
 			m.viewMode = ViewModePRDetail
 			return m, loadPRDetailCmd(m.selectedRepo, m.selectedPR.Number)
 		}
@@ -339,6 +407,9 @@ func (m Model) handleBranchDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.OpenPR):
 		return m, openOrCreatePRCmd(m.selectedRepo, m.branchDetail.Branch.Name)
+
+	case key.Matches(msg, m.keys.Refresh):
+		return m.handleRefresh()
 
 	case key.Matches(msg, m.keys.CopyBranch):
 		return m, copyToClipboardCmd(m.branchDetail.Branch.Name)
@@ -371,6 +442,64 @@ func (m Model) detailListLen() int {
 	return 0
 }
 
+func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	cmds = append(cmds, func() tea.Msg {
+		cache.ClearAll()
+		return RefreshCompleteMsg{ViewMode: m.viewMode}
+	})
+
+	switch m.viewMode {
+	case ViewModeRepoList:
+		// Clear all data including downstream views
+		m.loading = true
+		m.summaries = make(map[string]models.RepoSummary)
+		m.prCount = make(map[string]int)
+		m.branches = nil
+		m.stashes = nil
+		m.worktrees = nil
+		m.prs = nil
+		m.branchDetail = models.BranchDetail{}
+		m.prDetail = models.PRDetail{}
+		cmds = append(cmds, discoverReposCmd(m.scanPaths, m.maxDepth))
+
+	case ViewModeRepoDetail:
+		// Clear detail views when refreshing repo detail
+		m.branches = nil
+		m.stashes = nil
+		m.worktrees = nil
+		m.prs = nil
+		m.branchDetail = models.BranchDetail{}
+		m.prDetail = models.PRDetail{}
+
+		if m.selectedRepo != "" {
+			cmds = append(cmds, loadDetailCmd(m.selectedRepo))
+			if summary, ok := m.summaries[m.selectedRepo]; ok && summary.Upstream != "" {
+				cmds = append(cmds, loadPRCountCmd(m.selectedRepo, summary.Upstream))
+			}
+		}
+
+	case ViewModeBranchDetail:
+		// Clear branch detail when refreshing
+		m.branchDetail = models.BranchDetail{}
+
+		if m.selectedRepo != "" && m.selectedBranch.Name != "" {
+			cmds = append(cmds, loadBranchDetailCmd(m.selectedRepo, m.selectedBranch.Name))
+		}
+
+	case ViewModePRDetail:
+		// Clear PR detail when refreshing
+		m.prDetail = models.PRDetail{}
+
+		if m.selectedRepo != "" && m.selectedPR.Number > 0 {
+			cmds = append(cmds, loadPRDetailCmd(m.selectedRepo, m.selectedPR.Number))
+		}
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
 func (m Model) handlePRDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
@@ -380,15 +509,68 @@ func (m Model) handlePRDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewMode = ViewModeRepoDetail
 		return m, nil
 
+	case key.Matches(msg, m.keys.Refresh):
+		return m.handleRefresh()
+
+	case key.Matches(msg, m.keys.Up), key.Matches(msg, m.keys.Down):
+		// Navigate to adjacent PR
+		currentIdx := -1
+		for i, pr := range m.prs {
+			if pr.Number == m.selectedPR.Number {
+				currentIdx = i
+				break
+			}
+		}
+
+		if currentIdx != -1 {
+			var newIdx int
+			if key.Matches(msg, m.keys.Up) && currentIdx > 0 {
+				newIdx = currentIdx - 1
+			} else if key.Matches(msg, m.keys.Down) && currentIdx < len(m.prs)-1 {
+				newIdx = currentIdx + 1
+			} else {
+				return m, nil
+			}
+
+			// Switch to adjacent PR
+			m.selectedPR = m.prs[newIdx]
+			m.prDetail = models.PRDetail{
+				PRInfo: m.selectedPR,
+			}
+
+			var cmds []tea.Cmd
+			cmds = append(cmds, loadPRDetailCmd(m.selectedRepo, m.selectedPR.Number))
+
+			// Prefetch next adjacent PR
+			if key.Matches(msg, m.keys.Down) && newIdx+1 < len(m.prs) {
+				cmds = append(cmds, prefetchPRDetailCmd(m.selectedRepo, m.prs[newIdx+1].Number))
+			} else if key.Matches(msg, m.keys.Up) && newIdx-1 >= 0 {
+				cmds = append(cmds, prefetchPRDetailCmd(m.selectedRepo, m.prs[newIdx-1].Number))
+			}
+
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
+
 	case key.Matches(msg, m.keys.OpenURL):
 		if m.prDetail.URL != "" {
 			return m, openURLCmd(m.prDetail.URL)
 		}
 		return m, nil
 
-	case key.Matches(msg, m.keys.CopyBranch):
+	case key.Matches(msg, m.keys.CopyURL):
 		if m.prDetail.URL != "" {
 			return m, copyToClipboardCmd(m.prDetail.URL)
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.CopyPRNumber):
+		prNum := fmt.Sprintf("#%d", m.prDetail.Number)
+		return m, copyToClipboardCmd(prNum)
+
+	case key.Matches(msg, m.keys.CopyBranch):
+		if m.prDetail.HeadRef != "" {
+			return m, copyToClipboardCmd(m.prDetail.HeadRef)
 		}
 		return m, nil
 
@@ -725,6 +907,16 @@ func loadPRDetailCmd(repoPath string, prNumber int) tea.Cmd {
 	}
 }
 
+func prefetchPRDetailCmd(repoPath string, prNumber int) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		// Prefetch runs in background and populates cache
+		// No message sent to avoid UI updates during prefetch
+		_, _ = github.GetPRDetail(ctx, repoPath, prNumber)
+		return nil
+	}
+}
+
 func openOrCreatePRCmd(repoPath string, branchName string) tea.Cmd {
 	return func() tea.Msg {
 		return PRCreatedMsg{
@@ -736,14 +928,69 @@ func openOrCreatePRCmd(repoPath string, branchName string) tea.Cmd {
 
 func copyToClipboardCmd(text string) tea.Cmd {
 	return func() tea.Msg {
-		return CopySuccessMsg{
-			Text: text,
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("pbcopy")
+		case "linux":
+			cmd = exec.Command("sh", "-c", "type xclip >/dev/null 2>&1 && xclip -selection clipboard || type xsel >/dev/null 2>&1 && xsel --clipboard --input || type wl-copy >/dev/null 2>&1 && wl-copy")
+		case "windows":
+			cmd = exec.Command("clip")
+		default:
+			return StatusMsg{Message: "Clipboard not supported on this platform"}
 		}
+
+		if cmd != nil {
+			stdin, err := cmd.StdinPipe()
+			if err != nil {
+				return StatusMsg{Message: fmt.Sprintf("Failed to copy: %v", err)}
+			}
+
+			if err := cmd.Start(); err != nil {
+				return StatusMsg{Message: fmt.Sprintf("Failed to copy: %v", err)}
+			}
+
+			if _, err := stdin.Write([]byte(text)); err != nil {
+				return StatusMsg{Message: fmt.Sprintf("Failed to copy: %v", err)}
+			}
+
+			if err := stdin.Close(); err != nil {
+				return StatusMsg{Message: fmt.Sprintf("Failed to copy: %v", err)}
+			}
+
+			if err := cmd.Wait(); err != nil {
+				return StatusMsg{Message: fmt.Sprintf("Failed to copy: %v", err)}
+			}
+		}
+
+		return CopySuccessMsg{Text: text}
 	}
 }
 
 func openURLCmd(url string) tea.Cmd {
 	return func() tea.Msg {
-		return nil
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("open", url)
+		case "linux":
+			cmd = exec.Command("xdg-open", url)
+		case "windows":
+			cmd = exec.Command("cmd", "/c", "start", url)
+		default:
+			return StatusMsg{Message: "URL opening not supported on this platform"}
+		}
+
+		if err := cmd.Start(); err != nil {
+			return StatusMsg{Message: fmt.Sprintf("Failed to open URL: %v", err)}
+		}
+
+		return URLOpenedMsg{URL: url}
 	}
+}
+
+func clearStatusAfterDelay() tea.Cmd {
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return ClearStatusMsg{}
+	})
 }

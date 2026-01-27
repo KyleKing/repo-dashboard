@@ -110,7 +110,7 @@ func GetPRDetail(ctx context.Context, repoPath string, prNumber int) (*models.PR
 	env := vcs.GetGitHubEnv(repoPath)
 
 	cmd := exec.CommandContext(ctx, "gh", "pr", "view", strconv.Itoa(prNumber),
-		"--json", "number,title,state,url,isDraft,mergeStateStatus,headRefName,baseRefName,body,author,createdAt,updatedAt,additions,deletions,comments,reviewDecision")
+		"--json", "number,title,state,url,isDraft,mergeStateStatus,headRefName,baseRefName,body,author,assignees,reviewRequests,createdAt,updatedAt,additions,deletions,comments,reviewDecision")
 	cmd.Dir = repoPath
 	if len(env) > 0 {
 		cmd.Env = append(cmd.Environ(), env...)
@@ -134,6 +134,12 @@ func GetPRDetail(ctx context.Context, repoPath string, prNumber int) (*models.PR
 		Author         struct {
 			Login string `json:"login"`
 		} `json:"author"`
+		Assignees []struct {
+			Login string `json:"login"`
+		} `json:"assignees"`
+		ReviewRequests []struct {
+			Login string `json:"login"`
+		} `json:"reviewRequests"`
 		CreatedAt      string `json:"createdAt"`
 		UpdatedAt      string `json:"updatedAt"`
 		Additions      int    `json:"additions"`
@@ -149,6 +155,16 @@ func GetPRDetail(ctx context.Context, repoPath string, prNumber int) (*models.PR
 	createdAt, _ := time.Parse(time.RFC3339, resp.CreatedAt)
 	updatedAt, _ := time.Parse(time.RFC3339, resp.UpdatedAt)
 
+	assignees := make([]string, 0, len(resp.Assignees))
+	for _, a := range resp.Assignees {
+		assignees = append(assignees, a.Login)
+	}
+
+	reviewers := make([]string, 0, len(resp.ReviewRequests))
+	for _, r := range resp.ReviewRequests {
+		reviewers = append(reviewers, r.Login)
+	}
+
 	detail := &models.PRDetail{
 		PRInfo: models.PRInfo{
 			Number:         resp.Number,
@@ -163,6 +179,8 @@ func GetPRDetail(ctx context.Context, repoPath string, prNumber int) (*models.PR
 		},
 		Body:      resp.Body,
 		Author:    resp.Author.Login,
+		Assignees: assignees,
+		Reviewers: reviewers,
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
 		Additions: resp.Additions,

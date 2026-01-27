@@ -76,6 +76,8 @@ type Model struct {
 	batchProgress int
 	batchTotal    int
 
+	statusMessage string
+
 	keys KeyMap
 	help help.Model
 }
